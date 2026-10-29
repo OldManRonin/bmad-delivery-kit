@@ -1,0 +1,237 @@
+# {{DELEGATION_ADR}}: Delegated story approval and standing loop authority
+
+- **Status:** Proposed ({{ADOPTION_DATE}}, written by bmad-delivery-kit {{KIT_VERSION}}). It binds once the user accepts it. Until then every approval goes to the user. A planning-process rule; it passes no gate.
+- **Amends:** [ADR {{CHECKS_ADR}}]({{CHECKS_ADR}}-gate-story-approval-on-fresh-context-checks.md).
+- **Date:** {{ADOPTION_DATE}}
+
+Below, "the override" is `_bmad/custom/bmad-agent-po.toml`, "the coordinator" is the {{COORDINATOR_AGENT}} that runs the delivery loop, and "the user" is the project's operator. §1–§4 set up delegation. §5–§8 began as amendments in the production project this process was extracted from; here they are sections. §9 is the standing authority, and §10 lists what does not change.
+
+## Context
+
+bmad-loop builds stories unattended from the ticket tree (`[stories] source = "tickets"` in `.bmad-loop/policy.toml`). It halts at every ticket still to refine, at every `hitl` ticket, and at every epic boundary. Without delegation the user is asked about each story up to three times:
+
+- to approve its refinement, after ADR {{CHECKS_ADR}}'s two fresh-context checks;
+- to attend its build, if it is `hitl`;
+- to mark it done, if `[tickets] mark_done` is `"never"`.
+
+ADR {{CHECKS_ADR}} alone holds every story to one standard. When most entries carry `risk = "high"`, the label no longer separates stories by their consequences. Most delivery work is local: the agent works in local environments, and a person is needed only at the edges, such as a hosted run, a confirmation or an account action. With per-story human approvals, the user becomes the loop's bottleneck. The fresh checks and the independent review are the real quality control; the user's time goes where only a person can decide.
+
+## Decision
+
+### 1. Delegated refinement approval
+
+The coordinator may approve a refined story in the user's place. It sets `refined: true` and then runs the post-approval Ticket check. It may do this only when the fresh-context checks are clean, the story needs no decision from the user, and the story touches no gate, hosted run, spend, legal matter or credentials. Everything else goes to the user, batched on the operator checklist. No gate is ever marked passed.
+
+**The conditions.** All eight must hold. The override states them word for word under "Approval (ADR {{DELEGATION_ADR}})"; in short:
+
+1. **No DIVERGE** on the latest explain-back run.
+2. **Every blocking GAP fixed, readiness GO on the final text.** Every blocking GAP (§8) and every readiness FAIL is fixed in the story text; every other GAP is fixed or declined in a logged decision. The latest readiness run returned `VERDICT: GO` on the final text: the story file and the story's own `tickets.toml` entry, as hashed in that run's memlog line. Any edit after that run voids its GO, except approval bookkeeping. The delegate never accepts an unchecked fix. Run budgets follow §4 and §5.
+3. **Nothing pending for the user:** no `Assumption:` awaiting confirmation, no `Open question:` for the user, no `Unknown:` line, no `Source conflict:` without a later `Decision:`, no finding that only outside knowledge refutes, and no open item that would need a `Decision:`. The refinement changed only the story file and its own entry, did not change `after` or `hitl`, and did not lower `risk`.
+4. **Not hitl:** `hitl: false` in both the file and the entry, with no drift.
+5. **Outside the user's reserved areas**, for the story's criteria, `verify` line, evidence and operator actions:
+   - **No gate work of its own.** The story produces or claims no gate evidence and runs no hosted or gated step itself. The gates are {{GATES_LIST}}, and every ID that any entry's `validation_gates` lists. Naming a gate that a later entry owns does not count when the story's own evidence is labelled local; neither does a local suite a later gate run reuses, nor a "contribution" whose output is labelled local and which the gate owner re-runs.
+   - **No hosted work:** no hosted provisioning, deploy, or run against a non-local target (staging, production, a preview, a provider sandbox), even as an operator action.
+   - **No spend:** no paid call, cloud resource, domain or provider plan.
+   - **No legal matter:** no licence, attribution, redistribution, data-rights, terms-of-service or privacy question that needs the user's or counsel's judgment. Implementing a recorded rule exactly does not count.
+   - **No real credentials or provider accounts.** A story touches credentials when any step needs, creates, reads, copies, rotates or stores a real secret, key, token or account. Local fixture credentials that only their owning scripts generate and handle do not count, as long as no step opens them outside those scripts (`AGENTS.md`). Code that implements credential handling and is tested only with synthetic values does not count either.
+6. **Checked at an approved tier.** A high label always counts. A medium or low label counts only when the user approved it on or after {{DELEGATION_DATE}}.
+7. **Approved for execution.** The entry carries neither `execution_authorized = false` nor a "Draft only" constraint, and execution is authorized by the epic file (its Constraints or a dated user `Decision:`) or by the execution clause below. Sofia clears both draft markers when the user approves an epic's breakdown for execution, before any check runs on its stories.
+8. **Not production-facing** (§6): the story's Notes say `Production-facing: no`, and its entry sets neither `plan_checkpoint` nor `done_checkpoint`.
+
+**Execution clause.** Accepting this ADR extends each epic's local execution authorization to every story approved under it, by the user or the coordinator. It covers local work only, including the story's own local {{ENV_NOUN}}s, and bmad-loop's local commit (§3). Hosted work, provisioning, gate execution and pushes still need the user's explicit instruction for each ticket.
+
+**Hashes.**
+- *Story hash:* `shasum -a 256` of the story file.
+- *Entry hash:* SHA-256 of the entry's text block, read as UTF-8, from its `[[entry]]` line up to the next `[[entry]]` line or the end of the file. The override gives the command. Only the story's own entry is hashed, so another story's edit does not void the check.
+
+**Procedure for a delegated approval.**
+1. **Where.** In the main tree on `{{DELIVERY_BRANCH}}`, while no bmad-loop run is active there.
+2. **Bookkeeping.** Exactly two edits to the story file: `refined: true`, and one dated approval `Decision:` line in Notes that cites this ADR. A third only when the checks ran before the `Production-facing: no` line existed: the coordinator adds that line and logs it (§6).
+3. **Memlog line.** One `_bmad/scripts/memlog.py append --type decision --by coordinator` line in the epic's `.memlog.md`. The tool does not date entries, so the text starts with the date, then `refinement approved (delegated, ADR {{DELEGATION_ADR}})`. It names the story and its tier; for medium or low, the dated user decision that approved the label; the explain-back and readiness runs the approval rests on; each ALLOWED choice; that conditions 3–8 hold; `checked:` the story and entry hashes, equal to the latest readiness line's; and `approved:` the story hash after bookkeeping.
+4. **Ticket check.** A brand-new non-fork subagent runs the post-approval Ticket check. If it cannot start, or finds anything other than a suggestion (§7), the coordinator sets `refined: false` again, logs why, and puts the story in the user's batch. It never fixes and re-approves the story itself. The edits then stay uncommitted, and bmad-loop's dirty-initiative gate stops any later run; before the next run, the coordinator settles them through the user, or reverts its own uncommitted edits for that story after saving them as a patch.
+5. **Commit.** On a clean check, the coordinator commits by pathspec the story file, the epic's `tickets.toml` and the epic's `.memlog.md`. If either of the last two holds uncommitted changes that are not this story's refinement or approval, it asks the user instead. Then it may start the bmad-loop run.
+
+The coordinator never changes `risk` or `hitl`, never edits a check's results, never marks a gate passed, and never pushes.
+
+**Records of the checks.** Each readiness memlog line records the story and entry hashes as the checker read them. Each fix is its own memlog line, naming the finding it answers (run, check, criterion, and the mark or item) and quoting the text before and after.
+
+**Ticket check audit.** The override's "Pre-approval checks recorded" item reports a delegated approval that breaks any condition, a missing or mismatched hash, a fix before a confirmation run of a kind §4 does not allow, a third run outside §5, a stop outside §8, and a missing `Production-facing:` line (§6).
+
+**Revocation.** The user can revoke or narrow the delegation at any time with a dated decision. From then on, approvals go to the user. Approvals already made stand unless the user reopens them.
+
+### 2. hitl reclassified; human steps become operator actions
+
+A ticket whose agent work is local gets `hitl: false`. Its human steps, such as hosted or staging runs, confirmations and account actions, become operator actions. bmad-loop builds and commits the story and parks it at `awaiting-operator` (`[operator] enabled = true`). The user completes parked stories in batches with `bmad-loop confirm`.
+
+**The test.** Can the agent finish and commit all of its work before any person acts? If yes, `hitl: false`. If no, `hitl: true`. Counsel, provider accounts, hosted or gated runs, attended stories, and a host-wide change the build depends on (such as installing a system package) keep a ticket `hitl`. bmad-loop halts at a `hitl` ticket, and the user builds it in an attended session. Sofia proposes the reclassification list and the user approves it once.
+
+**Where operator actions are recorded.**
+- **Entry.** `operator_actions` is a list of strings in `tickets.toml`, one per action: what the user does, where, and which observation confirms it. `tickets.py` ignores unknown keys.
+- **Story.** Each action is an `Operator action:` line in Notes; the criterion the action completes names it, so only a person can meet that criterion; the Description says the story parks for those actions.
+- **Plan.** bmad-loop's dev session commits the agent's work, sets the plan to `awaiting-operator`, and copies the actions into the plan's `operator_actions:` frontmatter.
+
+The agent never performs an operator action, even one it could run. It may write the command or a checklist for the user.
+
+**Parks skip the review session.** A dev park commits through bmad-loop's skip-review path; the `[verify]` commands still run, and a high-risk park still gets the dev session's thorough inline review. So before each `bmad-loop confirm` batch, the coordinator runs a fresh review of each park commit, as a brand-new non-fork subagent. If the review rejects a commit, the story goes to the user, who does not confirm it.
+
+**Effects of a park.** A parked plan stays `blocked` until confirmed, so its epic cannot reach its boundary review; later epics keep building; once no candidate remains, a new run halts at `blocked-plan`. Confirming records the user's step and passes no gate. Evidence from a hosted step is labelled hosted, never local.
+
+### 3. Standing commit and done authority for loop stories
+
+`AGENTS.md` may let an agent commit only when the user asks. Accepting this ADR is that ask, for these commits only:
+
+- **Story commits.** bmad-loop commits each story locally on `{{DELIVERY_BRANCH}}` once its `[verify]` commands pass and its independent review session (`[review] trigger = "always"`, {{REVIEW_AGENT}} reviewing {{DEV_AGENT}}'s build) finishes. That commit makes the story done (`[tickets] mark_done = "auto"`). A parked story is done when the user confirms it. A production-facing story is done only after the user's done review (§6).
+- **Delegated approval commits,** by pathspec (§1).
+- **The coordinator's bookkeeping commits** under §6 and §9.
+
+Every other planning commit asks the user, unless §9 covers it. There is no push. Work on any other branch is outside this authority.
+
+**Epic boundary.** `[gates] mode = "per-epic"` pauses the run when an epic finishes. With `[gates] retrospective = "notify"`, bmad-loop records the verdict `unknown` and pauses once; verdicts live in each run's state, so a new run does not remember them. To accept the epic, the user closes it with Sofia's closure check and commits that change; while it is finished but open, later runs halt at `awaiting-closure`. To reject it, the user stops the run and logs the rejection as a dated decision; the coordinator then uses `bmad-loop run --epic <slug>` until the user closes the epic. Whether any commit is reverted is the user's decision, and nothing is rewritten. The user approves the stories that fix a rejected epic; they are not delegated.
+
+### 4. Refinement depth scales with risk
+
+Risk is labelled by the consequence of a wrong build, not by its area. An *approved contract* or *approved boundary* is one recorded in an Accepted ADR, in {{ARCHITECTURE_DOC}}, or by a done entry.
+
+- **High.** Any one of these:
+  1. *Irreversible.* It can destroy or rewrite customer data, a retained or shared {{ENV_NOUN}} or its volumes, or anything outside the repository and the story's own new local {{ENV_NOUN}}s.
+  2. *Security boundary.* It creates or changes authentication, authorization, sessions, roles and grants, row-level policies, or the separation of credentials and setup authority from runtime. Code that only uses an unchanged, approved boundary is medium, provided a criterion proves the boundary still applies.
+  3. *Money.* It creates or changes how usage is measured, counted, priced, billed or settled, or it moves money. Code that only reads or shows those results is medium.
+  4. *Data rights.* It creates or changes what customer data is kept, deleted or shared, or the mechanism that enforces a data source's licence. Code that only relies on an unchanged mechanism is medium.
+  5. *Contract.* It creates or changes a contract that is published, locked by a gate, or relied on by another epic. Building to an approved contract is medium. The terms:
+     - a *contract* is a written interface: an endpoint's request, response and error shape; a published API or compatibility surface; a database schema object; or a handoff that another entry names;
+     - it is *published* when external callers can see it;
+     - it is *locked by a gate* when a gate freezes its shape, such as a schema lock;
+     - it is *relied on by another epic* when an entry in that epic names it in `after` or `handoff`.
+  6. *Gate evidence.* It produces or claims gate evidence, or runs a hosted or gated step itself.
+- **Medium.** No high trigger, but a wrong build costs other work: it changes code, tooling, configuration or an internal handoff that later stories build on, or it builds to an approved contract. Tests or review catch the error, and a revert or a follow-up story fixes it.
+- **Low.** No high trigger, and a wrong build affects only this story's own output, which a revert fixes: documentation, test-only additions, refactors that leave the tests unchanged, non-destructive local conveniences.
+
+For a high ticket, `risk_reason` names the trigger; for medium or low, it says why no high trigger applies. When a ticket could be either of two tiers, it takes the higher. Sofia proposes each label and the user approves it. Sofia may raise a label to high during refinement and log it; the checks then restart at the high standard. Lowering a label needs the user, and the coordinator never changes one.
+
+| | High | Medium and low |
+|---|---|---|
+| Readiness R1 | **Zero decisions.** | **Bounded choices**: internal structure inside the landing unit and within the Boundaries may stay open through a `Builder choices:` line in Notes; the builder records each choice in the build plan. |
+| Explain-back item 3 | Any decision blocks. | A choice the `Builder choices:` line allows is ALLOWED. |
+| Runs | Up to two of each check, plus one delegated third run (§5). | One of each, plus at most one readiness-only confirmation run. |
+| Extra check | Required: one check beyond the criteria, on the entry and in Notes. | Not required; if kept, it binds. |
+| bmad-loop review | Thorough inline review in the dev session (`thorough_review = "high-risk"`), then the review session. | The review session. |
+
+**Confirmation run.** A *finding* is a GAP or DIVERGE mark in a run's explain-back comparison, or a FAIL in its readiness result, as logged. The confirmation run is allowed only when every fix answers a finding of the story's single run and either defines a term the story already uses, adding no obligation, or names the command for an existing pass or fail observation. Any other change touches a requirement (what a criterion requires, scope, Boundaries, `after`, `hitl`, `risk`, the `verify` line, evidence fields, commands, {{HANDLES}}, predecessor bindings) and goes to the user. A DIVERGE cannot be cleared by this run. A fix that settles a builder choice needs a fresh run of both checks, not a confirmation run.
+
+These budgets apply whoever approves.
+
+### 5. Delegated third run for high-risk stories
+
+High-risk stories routinely need more than two runs: each fresh reader finds something the last missed. For a high-risk story whose second run has both checks logged, neither INCOMPLETE, and no DIVERGE, the coordinator may authorize one fix round and a third run of both checks. Every blocking finding of the second run must be answered by a fix of one of four kinds, within the story's scope, its cited ADRs and its Boundaries; every suggestion by such a fix or a declining decision line:
+
+- **Settle a builder choice:** record one option, which those already allow, for an open choice the run named, adding no other obligation.
+- **Add a test:** a pass or fail observation and its command, proving what an existing criterion already requires. It may add the command to the `verify` line and its result to the criterion's local evidence.
+- **Define a term** the story already uses, adding no obligation.
+- **Name the command** for an existing pass or fail observation.
+
+A fix that touches scope (the outcome, what a criterion requires beyond the settled choice, a criterion added or removed, the Boundaries, `after`, `hitl`, `risk`, a handoff, or anything another entry consumes), a reserved area (§1 condition 5) or an ADR conflict sends the whole story to the user. So does doubt about a fix's kind.
+
+**Records.** After the second run's lines and before the first fix, the coordinator appends one `--type decision --by coordinator` line whose text starts with the date, then `third run authorized (delegated, ADR {{DELEGATION_ADR}} §5)`, naming the story and tier, the second run's lines, each finding with its fix kind (or declining decision line), and that no fix touches scope, a reserved area or an ADR conflict. Each fix line names its kind and the `path#section` that allows it. Each third-run check line says it is delegated. The third run is clean when its explain-back has no DIVERGE and no blocking GAP and readiness is GO; the coordinator may then approve under §1. Otherwise no fix follows it: a blocking explain-back finding goes under §8's stop, anything else to the user. The user can still authorize any further run for a single story.
+
+### 6. Human gates for production-facing stories
+
+A clean check run is one sample. A confident misreading passes a fresh-context check unnoticed, and only a human catches it. So production work keeps human gates; delegation stays for local-only, gate-free stories.
+
+**A. The test.** At every refinement, including a re-approval, Sofia asks whether anything the story creates or changes belongs to the *production artifact set*: whatever a hosted deployment builds, applies, runs or publishes as written. The set, the local-only units and the decided cases for this project are in the override, under "Production-facing"; changing them amends this ADR. Doubt means yes. Sofia records one Notes line, `Production-facing: yes, <artifact and unit>` or `Production-facing: no, <units and why each is local-only>`. She may change no to yes and logs it; yes to no needs the user; the coordinator never changes the line. Adding the line after the checks is approval bookkeeping: it gets its own memlog event line and does not void the readiness GO.
+
+**B. Fields, approval and commits.**
+- On a production-facing entry, Sofia sets `plan_checkpoint = true` and `done_checkpoint = true`. A local-only entry sets neither.
+- Condition 8 (§1): the user approves every production-facing refinement, batched on the operator checklist with its tier, check results and `Production-facing:` line. Check runs and budgets stay as they are.
+- A production-facing `hitl` story keeps both flags; bmad-loop halts at `hitl` first, so the user builds it in an attended session that leaves a plan MATCH line with the plan's SHA-256 before implementation, and a `done review <ref>: accepted` line after a walkthrough. Part D's hold applies from its commit until that acceptance.
+- The coordinator commits by pathspec: plan files and their removal, its plan-reading line, the user's plan-verdict line, the `mark_done` switch lines, the done-review line, and the `tickets.py mark … done` edit. Each is committed before the next run starts or resumes; otherwise bmad-loop's dirty-initiative gate pauses that run at `ticket-tree`.
+
+**bmad-loop facts this relies on** (bmad-loop {{BMAD_LOOP_VERSION}}; recheck on every bmad-loop upgrade):
+1. `plan_checkpoint` and `done_checkpoint` are entry fields that `tickets.py` reads from the entry.
+2. For a refined ticket, `plan_checkpoint` halts *before dispatch* to approve the story file; no builder's plan exists yet. The two-leg plan halt applies only to unrefined tickets.
+3. A dispatched ticket with an existing plan at `ready-for-dev` is built as that plan says.
+4. `done_checkpoint` is skipped for a run's last story, so it never fires under `--max-stories 1` or `--story <ref>`. `[tickets] mark_done` is global. A `built` plan already meets a dependent's `after`; only `gated_by` waits for done.
+
+**C. Plan checkpoint.** Because the halt comes before any plan, the coordinator gets the plan first, in a *plan leg*:
+1. In the main tree on `{{DELIVERY_BRANCH}}`, with a clean tree, no active run, and no plan file at the path `tickets.py find` gives, it runs one session of the dev adapter with the dev invocation that `bmad-loop run --dry-run --story <ref>` prints, with `Halt after planning.` appended. The session must leave only the plan, at `ready-for-dev`, with `baseline_revision` empty or absent; anything else is saved as a patch, reverted, and put on the checklist.
+2. It commits the plan and the memlog by pathspec. A committed plan at `ready-for-dev` is safe: any run that picks the story halts at `plan-checkpoint`.
+3. It reads the plan against the story, marking each criterion, the Boundaries and the `verify` line MATCH, GAP or DIVERGE, logs one `--type event --by coordinator` line with the plan's SHA-256, the story and entry hashes and each mark, commits it, and puts the plan, story and reading on the checklist. Its reading is advice; the user's marks decide.
+4. The user's verdict is logged as a `--type decision --by user` line with the plan hash and committed. On MATCH for every item, the coordinator starts `bmad-loop run --story <ref> --max-stories 1` under part D's switch, checks at the halt that the plan, story and entry hashes still match, and resumes. On any GAP or DIVERGE it does not resume: it removes the plan in a new commit; by default Sofia fixes the story, its checks run again and the user re-approves before a new plan leg, or the user orders a new plan leg on unchanged text.
+5. The coordinator never resumes a `plan-checkpoint` halt without a user MATCH line for the current plan hash. Before the first plan leg, `bmad-loop run --dry-run --story <ref>` must predict that pause; if bmad-loop behaves otherwise, the coordinator stops and asks.
+
+**D. Done review.** The user marks a production-facing story done after a walkthrough:
+- Before its build run, the coordinator sets `[tickets] mark_done = "never"` in `.bmad-loop/policy.toml` and restores `"auto"` once that run has ended, never while it is paused, logging both switches. The plan then stays `built`.
+- **The hold.** Once bmad-loop commits a production-facing story, the coordinator starts or resumes no bmad-loop run, sweep or plan leg, in any epic, until the user accepts it. Refinement and its checks may go on. The switch alone protects nothing, because a `built` plan already meets a dependent's `after`; the hold closes that gap.
+- The checklist item holds the story commit, the MATCH line, the diff from the matched plan to the final plan, and the verify and review results. The user runs `bmad-walkthrough` on the commit and gives a verdict, logged as `done review <ref>: accepted` or `rejected` with the reason.
+- **Accepted:** the coordinator runs `tickets.py mark <ref> done`, cites the acceptance in a memlog line, commits by pathspec, and the hold lifts.
+- **Rejected:** the plan stays `built`, and the story reopens through Sofia: by default a follow-up story that fixes it (both are marked done when the follow-up's review is accepted), or, when the user chooses, a `git revert` of the story commit followed by a commit removing the restored plan. Sofia adds the follow-up to the `after` of every entry that waits on the rejected story. The user approves the reopening, and the hold lifts with that approval. Nothing is rewritten.
+- **A park:** the hold starts at the park commit, and the walkthrough comes before `bmad-loop confirm`.
+
+**E. Epic-boundary walkthrough.** At the boundary of every epic in which the coordinator approved at least one story, the user runs `bmad-walkthrough` over the epic's story commits on `{{DELIVERY_BRANCH}}`, interactively, before Sofia's closure check and the closure commit. That is when every ticket of the epic is done, every production-facing done review is accepted, and the run has paused at the boundary or halted at `awaiting-closure`. The coordinator prepares the commit range, each story with its approval line and done-review line, the confirmed parks and the epic's open deferred-work entries. No agent runs the walkthrough for the user, and §9 does not cover it. A rejection follows §3's rejection path. Other epics keep §3's boundary review.
+
+**F. Where it applies.** The test applies from {{PRODUCTION_GATES_DATE}} at each refinement and re-approval. No ticket is flagged retroactively. Before it builds a story approved earlier, the coordinator applies the test; a story that is or may be production-facing goes back to Sofia and the user.
+
+### 7. R1–R12 in the Ticket check: a second pass
+
+The readiness items live in one place: the `workflow.checks.ticket` entry "Readiness items R1–R12", beside the record audit. Both R1 lines stay; the checker applies the one for the story's tier, and a medium or low label without the user's approval on or after {{DELEGATION_DATE}} counts as high. Each item needs evidence (`path#section` or a grep hit), and the story passes only if all twelve pass. Check 2's brief copies the items from that entry and keeps no copy of its own, so the two cannot drift.
+
+The post-approval Ticket check is Validate's Ticket section run by a fresh agent, so it runs R1–R12 a second time after the GO. The entry's scope is a story with `refined: true` whose build has not started (`backlog`), approved after the entry was committed. It judges from what the builder reads; the `.memlog.md` is not evidence for these items. This pass is not a readiness run: it is logged as a Ticket check line and never stands in for Check 2. Nothing is dropped as already covered by a built-in Ticket bullet: each R item is wider, and Check 2 runs the items without those bullets.
+
+**Triage of the second pass** (`workflow.validate_after`). Any edit to an approved story breaks its `approved:` and `checked:` hashes, so:
+- **Fix:** never applied in place. The approval is withdrawn (`refined: false`, logged), and the story returns through the fix and run rules.
+- **Suggest:** an observation that fails no Ticket check; a checker's FAIL is never reclassified as one. The coordinator decides it under §9 and logs it in the memlog or the deferred-work ledger. It does not block. Adopting it is an edit, so it then takes the fix path.
+- **Ask the user** only about an operator action, a hosted run, a gate, spend, a legal matter, credentials, or a finding with no defensible recommendation. An ask about a FAIL or one of those areas withdraws the approval until the user answers.
+- Every FAIL is a fix or an ask. Any R1–R12 FAIL blocks the build. A withdrawal by the second pass counts as a finding of the story's latest run and opens no new budget; a story withdrawn twice goes to the user.
+
+### 8. Re-check rules
+
+Each fresh reader finds new GAPs of little consequence, and re-reading every criterion after every fix kept stories in fix rounds (one story's GAP count rose with every round, because each fix added text a new reader could misread). Six rules, proposed by a BMad maintainer, contain that. The override words each one under the heading named here.
+
+1. **Scoped re-runs** (Check 1, "Scoped re-run"). An explain-back re-run after fixes covers each criterion a fix line since the last run changed (including through text outside the criteria that the criterion relies on), each criterion that uses a term a fix defined or changed, and each criterion whose prior marks were not all MATCH or ALLOWED. Each fix line names the criteria it brings into scope, or none. The reader still gets the whole story and answers items 1, 3 and 4 story-wide. Doubt means a full run, and the first run after a rewrite or re-slice is full. Readiness always judges the whole story, which keeps contradictions (R10) and the high-risk R1 checked across the text.
+2. **Sweep** ("Findings, runs and the record"). Before any re-run, check the whole story for gaps of the same kind as each finding, and fix them as their own logged lines, "proactive, same class as <finding>". Fixing by class rather than by instance is what made stories converge.
+3. **Wording** ("Wording"). Short sentences in the project's vocabulary; every term defined or already in use; cut text that neither the build nor its verification needs. Between runs, text changes only through logged fixes.
+4. **What blocks** (Check 1, "What blocks"; `validate_after`). A DIVERGE, a readiness FAIL, a missing prerequisite, a contradiction, a GAP where the reader's choice could change what is built or how it is verified, a GAP on what to make true or the wrong build, and on a high-risk story any decision left to the builder. Every other GAP is a suggestion only when its memlog line says so with a reason; doubt means it blocks.
+5. **Declined suggestions.** A declined suggestion is a dated `--type decision` line in the epic's memlog, by the coordinator under §9 or by the user. It counts as a declining `Decision:` for Validate's no-re-raise rule; a later repeat is logged as declined unless new evidence changes its basis. It is not written into the story, because that edit would void the GO.
+6. **Stop.** When an explain-back run that is the story's third or later still has a blocking finding, no fix round follows. Sofia rewrites the story once (new text; a rewrite touching scope goes to the user; logged as `rewrite (re-check rules)`; runs count from 1 again, starting with a full run). If the rewrite's third run also blocks, she re-slices it through Validate's Set and Dependencies sections (logged as `re-slice (re-check rules)`); the coordinator may make a re-slice under §9 unless it changes scope or Requirements coverage. A re-sliced story that reaches the stop goes to the user. This caps the coordinator's authority to authorize more runs; a dated user decision for a specific story still overrides it.
+
+Run and fix lines whose commit is an ancestor of the `{{DELIVERY_BRANCH}}` commit this adoption lands on (the override names it) are exempt from the stop audit. An uncommitted line is never exempt.
+
+### 9. Standing authority for recommended options
+
+Once the user accepts this ADR, and only while it stays Accepted, the coordinator takes the recommended option itself instead of asking, for: check re-runs and fix rounds within §4, §5 and §8; splits and re-slices that change no scope or Requirements coverage; ordering; approving clean stories under §1; deciding suggestions under §7 and §8; and planning or ADR commits of a recommended option after a fresh review of it. It records each choice as a coordinator decision in the relevant memlog, citing this section, and reports it in its next status update. An ADR it writes stays Proposed until a fresh review passes, and it logs the acceptance, except ADR {{CHECKS_ADR}}, ADR {{DELEGATION_ADR}}, or any amendment widening coordinator authority; only the user accepts those.
+
+It still asks the user, batched on the operator checklist with one notification, for: operator actions it may not perform (any {{ENV_NOUN}} it did not create; hosted, staging or production runs); gates; spend; legal or counsel matters; real credentials or provider accounts; production-facing approvals, plan verdicts and done reviews (§6); and any choice with no defensible recommendation. It never pushes, deploys or marks a gate passed. The user can narrow or revoke this authority with a dated decision.
+
+### 10. Unchanged
+
+- Every check, re-run, confirmation run and Ticket check is a brand-new non-fork subagent. If one cannot start, the work stops and goes to the user.
+- Check results go only to the epic's `.memlog.md`, never into the story file.
+- No gate is ever marked passed, and local evidence stays local.
+- No push or deploy, and no hosted provisioning, spend, paid provider call or provider account without the user's explicit instruction for that ticket.
+- No agent opens credential files except through the scripts that own them (`AGENTS.md`).
+- The checks run in attended refinement only, never inside bmad-loop's unattended build sessions.
+
+The rules for Sofia live in the override: §1, §4–§6 A–B and §8 in `workflow.refine_before`; the audit and R1–R12 in `workflow.checks.ticket`; §7's triage in `workflow.validate_after`. §2, §3, §6 C–E and §9 are coordinator rules recorded only here.
+
+## Alternatives considered
+
+- **Keep every approval with the user.** Rejected: the user becomes the loop's bottleneck, and approving a clean, local story adds nothing the fresh checks did not already show.
+- **Delegate every approval, including gates, hosted and production work.** Rejected: those stay with a human. A confident misreading passes an agent's check.
+- **Let the delegate accept fixes made after the last run.** Rejected: it approves text no fresh reader saw.
+- **Hash the whole `tickets.toml`.** Rejected: any other story's edit would void the check.
+- **Judge risk by area, so any endpoint or schema work is high.** Rejected: nearly every entry would stay high, which defeats an honest label.
+- **Reuse `human_step` for operator actions.** Rejected: one field would mean both a step during the build and a step after it.
+- **Use bmad-loop's own halt for refined tickets as the plan review.** Rejected: no builder's plan exists at that point (§6 fact 2).
+- **Rely on `done_checkpoint`, or set `mark_done = "never"` globally.** Rejected: `done_checkpoint` never fires as the coordinator runs bmad-loop, and a global "never" would undo §3 for every local-only story.
+- **Two copies of R1–R12.** Rejected: two copies drift.
+- **Let the coordinator keep authorizing runs past the third.** Rejected: blocking findings after three runs point at the text, not the reader.
+
+## Consequences
+
+- The user sees less: approvals that need them, in batches; reviewed parks, in confirm batches; each production-facing story three times (refinement, plan verdict, walkthrough); and each delegated epic at its boundary.
+- The coordinator's judgment carries more weight. The conditions are written to be checked against the records, and the Ticket check audits each delegated approval against the memlog, the fix lines and the hashes.
+- Lowering a ticket's risk also lowers bmad-loop's review depth (`thorough_review = "high-risk"`). Every story that is not parked still gets the review session.
+- The loop waits after each production-facing build until its walkthrough.
+- For each production-facing story, the coordinator runs one builder session outside bmad-loop, without bmad-loop's journal, timeouts or recovery.
+- Follow-up: ask bmad-loop upstream for a builder-plan halt on refined tickets; once it ships, the plan leg moves into the run.
+- The override must be rechecked on every `bmad-agent-po` upgrade, and §6's facts on every bmad-loop upgrade.
+- This ADR records planning process; its evidence stays local, and it passes no gate.

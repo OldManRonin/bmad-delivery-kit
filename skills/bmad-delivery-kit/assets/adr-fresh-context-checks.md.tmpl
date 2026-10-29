@@ -1,0 +1,55 @@
+# {{CHECKS_ADR}}: Gate story approval on fresh-context explain-back and readiness checks
+
+- **Status:** Proposed ({{ADOPTION_DATE}}, written by bmad-delivery-kit {{KIT_VERSION}}). It binds once the user accepts it. A planning-process rule; it passes no gate.
+- **Amended by:** [ADR {{DELEGATION_ADR}}]({{DELEGATION_ADR}}-delegated-story-approval-and-standing-loop-authority.md) (same date), which adds delegated approval, risk tiers, the delegated third run, human gates for production-facing stories, the second pass of R1–R12 and the re-check rules. This ADR states the check rules as amended.
+- **Date:** {{ADOPTION_DATE}}
+
+## Context
+
+Unattended bmad-loop sessions build each story from its files alone. Anything the ticket leaves unsaid, which Sofia (`bmad-agent-po`) carries in her head from the refinement chat, reaches the build as a guess or as an escalation that pauses the loop.
+
+BMad's refinement runs in this order: a self-review in Sofia's own context ("Self-review before the user sees it" in `bmad-agent-po` `references/ticket.md`), then the user's approval, then the fresh-context Ticket check in `references/validate.md` before a build starts. The only fresh-context review therefore comes after approval. Nothing tests, before approval, whether a reader with no chat context understands the story the way Sofia meant it. The post-approval check can even run inline when a session cannot start subagents.
+
+Google's Elephant-Goldfish Model (EGM) addresses the same gap. It pairs an author agent that holds the whole working context with reviewer agents that start without it and must understand the work from its artifacts alone. Sources: https://opensource.googleblog.com/2026/10/introducing-elephant-goldfish-model-plugin.html and the repository google/elephant-goldfish-model. EGM ships as an installable plugin under the Apache-2.0 licence.
+
+## Decision
+
+Adapt EGM's ideas in our own words rather than install the plugin. Two pre-approval checks are added to Sofia's refinement. They run after her self-review and before she asks for approval, whoever approves.
+
+1. **Explain-back (comprehension).** A brand-new subagent reads only a fixed list of paths: the story file, its epic file, every path in the story's References, `AGENTS.md`, and the story's `tickets.toml` entry. It never reads a `.memlog.md`, chat transcripts, other stories' plans or {{PROTECTED_PATHS}}, and it receives no refinement chat or private reasoning. Without quoting the story, it explains the outcome and what must not change. For each criterion it says what to make true, how to prove it, one wrong build the criterion fails, the predecessor evidence it binds, where the work lands, and which commands and {{ENV_NOUN}}s it uses or must leave alone. It also lists the decisions it would have to make itself and the terms it cannot define. Each answer is KNOWN (with `path#section`) or INFERRED. Sofia marks each answer MATCH, GAP or DIVERGE.
+   - **What blocks.** A DIVERGE, a readiness FAIL, a missing prerequisite, a contradiction, a GAP on what to make true or on the wrong build, a GAP where the reader's own choice could change what is built or how it is verified, and on a high-risk story any decision left to the builder. Every other GAP is a suggestion, and only when its memlog line says so with a reason. Doubt means it blocks.
+   - **Scoped re-runs.** A re-run after fixes answers the per-criterion questions only for the criteria the fixes touched, plus every criterion not yet all MATCH. The first run after a rewrite or re-slice is full. ADR {{DELEGATION_ADR}} §8 holds the details.
+2. **Readiness go/no-go.** A second brand-new subagent gets the same reading list and limits, and may Grep or Glob the repository read-only. It judges twelve items, R1–R12: no open decisions (R1, worded per risk tier), criteria, evidence, the verify line, predecessor evidence, prerequisites, where the work lands, commands, {{HANDLES}}, agreement with code and decisions, size, and boundaries. It returns `VERDICT: GO` only when all twelve pass, otherwise NO-GO. Two items carry rules of their own:
+   - **R3 (evidence)** requires all evidence to be labelled local, unless a dated `Decision:` in the story authorizes hosted evidence for that criterion. Nothing may claim to pass {{GATES_SHORT}}.
+   - **R7 (files and modules)** accepts the unit the work lands in and whether it changes the {{SOURCE_TERM}}. It needs no source path, because BMad's ticket rules ban source paths.
+
+   The items have one home: a `workflow.checks.ticket` entry, "Readiness items R1–R12". Check 2's brief copies them from it, and the post-approval Ticket check runs them a second time (ADR {{DELEGATION_ADR}} §7).
+
+Rules shared by both checks:
+
+- An unreadable file makes a check INCOMPLETE, which is never clean.
+- A finding can be contested only with evidence the checker could read. A finding that only outside knowledge refutes goes to the user. Severity is never changed, and "this was intentional" is not evidence.
+- Run budgets follow the story's risk tier (ADR {{DELEGATION_ADR}} §4): a high-risk story gets up to two runs of each check, plus one delegated third run under narrow fix rules (§5); a medium- or low-risk story gets one run of each and at most one readiness-only confirmation run. Before each re-run, Sofia sweeps the whole story for gaps of the same kind as each finding. When a third explain-back run still has a blocking finding, no fix round follows: the story is rewritten once, then re-sliced (§8). Anything still open after the last run becomes a dated `Decision:` line only if the user accepts it; otherwise the story stays `refined: false`.
+- If a fresh subagent cannot be started, Sofia stops and reports. A review in her own context does not count.
+- Nothing needs a second person.
+- The results go to the epic's `.memlog.md`, never into the story file that the next checker reads. Each readiness line records the SHA-256 of the story file and of the story's own `tickets.toml` entry block, as the checker read them. The approval request shows the explain-back comparison and the readiness verdict, so the coordinator can show them to the user on the operator checklist.
+
+The post-approval Ticket check still runs after approval. It gains two items. "Pre-approval checks recorded" checks that the results of every run were logged, that scoped runs were scoped correctly, and, for a delegated approval, that the approval rests on the checked text (ADR {{DELEGATION_ADR}} §1). "Readiness items R1–R12" runs the twelve items again on an approved story whose build has not started. Stories with `refined: false`, entries not yet approved, and approvals dated before {{CHECKS_DATE}} are out of scope, so per-epic and set validations do not fail on them; a later re-approval of any of them is covered.
+
+The rule lives in the committed team override `_bmad/custom/bmad-agent-po.toml`. It is not an edit to the installed skill. The two checks are in `workflow.refine_before`, which is inserted at the top of `references/ticket.md`, so the text itself says it runs after the self-review and before the approval request. The two audit items are in `workflow.checks.ticket`, which adds them to the Ticket section of `references/validate-checks.md`. The triage of the post-approval findings is in `workflow.validate_after`.
+
+## Alternatives considered
+
+- **Install the EGM plugin.** Its reviewers skip the agent instructions file, so they miss `AGENTS.md` and its rules about files they must not open, yet they can read any file. Its bootstrap writes files across code directories and may run tools through `npx`. Its resolve step waits for a person with no time limit, which stalls unattended sessions, and it can edit approved specs. It bans recommended options, while Sofia asks every question "with the answer I would pick". It also duplicates artifacts BMad already keeps (tickets, plans, memlogs).
+- **Quote EGM's prompts verbatim.** Copied Apache-2.0 text brings a licence notice to keep with it. Wording the checks ourselves avoids that.
+- **Run the readiness items only after approval, in `workflow.checks.ticket`.** Rejected as the only pass: they would run after approval rather than before it, and a set validation would fail every story whose prerequisites are still unbuilt. Adopted as a second pass: Check 2 still runs the items before approval, and the second pass covers only approved stories not yet built.
+- **Do nothing.** The only fresh-context review stays after approval, and comprehension gaps keep surfacing inside unattended builds.
+
+## Consequences
+
+- Each refined story costs two extra agent runs, and more with re-runs.
+- The checks run in attended refinement, wherever Sofia asks for approval, including a refinement started from the attended `bmad-loop-resolve`. They do not run in bmad-loop's unattended build sessions, which are unchanged.
+- A refinement that cannot start a fresh subagent now stops rather than reviewing inline.
+- The override survives skill updates because it sits outside the installed skill. If an update renames or drops `workflow.refine_before`, `workflow.validate_after` or `workflow.checks.ticket`, the skill's render halts on the undeclared key, so the override must be rechecked on every `bmad-agent-po` upgrade.
+- Follow-up: run a one-time fresh-context probe. Plant one marker in the parent session's context and one in `CLAUDE.md` (a file not on the reading list), start a child the way the checks do, and require the child to report both markers as unknown. Run it for Sofia's subagents and for bmad-loop's build sessions, and record the result here. Until then, their isolation is assumed, not shown.
+- Check results are planning evidence and remain local. This ADR passes no gate.

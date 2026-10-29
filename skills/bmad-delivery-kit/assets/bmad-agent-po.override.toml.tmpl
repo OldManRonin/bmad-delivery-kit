@@ -1,0 +1,320 @@
+# Team override for bmad-agent-po (Sofia). Committed; personal settings go in bmad-agent-po.user.toml.
+# bmad-delivery-kit {{KIT_VERSION}}, rendered {{RENDER_DATE}}; its values are in _bmad/custom/bmad-delivery-kit.values.toml. Change the three kit keys below through the bmad-delivery-kit skill, so an upgrade can merge them.
+# ADR {{CHECKS_ADR}}: two fresh-context checks gate every approval of a refined story.
+# ADR {{DELEGATION_ADR}} amends it: the coordinator may approve in the user's place under stated conditions (§1), and refinement depth and run counts scale with the story's risk (§4).
+# ADR {{DELEGATION_ADR}} §5: the coordinator may authorize one fix round (four fix kinds) and a third run of both checks for a high-risk story.
+# ADR {{DELEGATION_ADR}} §6: a production-facing story gets plan_checkpoint and done_checkpoint on its entry, and its approval goes to the user.
+# ADR {{DELEGATION_ADR}} §7: readiness items R1–R12 live only in `checks.ticket`; Check 2 copies them, and the post-approval Ticket check runs them again.
+# ADR {{DELEGATION_ADR}} §8 (re-check rules): wording, what blocks, scoped explain-back re-runs, a sweep before each re-run, declined suggestions, and a stop after a third run.
+# The checks adapt ideas from Google's Elephant-Goldfish Model in our own words; no EGM text is copied.
+# `refine_before` lands at the top of references/ticket.md, so the text states when it runs.
+# `checks.ticket` adds two items to the post-approval Ticket check: the record of those checks exists, and R1–R12 pass. The Ticket check still runs after approval.
+# `validate_after` lands at the end of references/validate.md: how that Ticket check's findings are sorted without editing an approved story.
+
+[workflow]
+
+refine_before = '''
+## Fresh-context checks before approval (ADR {{CHECKS_ADR}}, amended by ADR {{DELEGATION_ADR}})
+
+A team rule. These two checks gate every approval of a story's full criteria (`refined: true`), including a re-approval after its criteria change. Run them after "Self-review before the user sees it" and before you ask for approval. The approver is the user, or the coordinator (the {{COORDINATOR_AGENT}} running the delivery loop) when every condition under "Approval (ADR {{DELEGATION_ADR}})" holds. "The user's approval" under "After approval" includes that delegated approval. The Ticket check under "After approval" stays where it is. A run that ends without asking for approval (headless) skips the checks; they run before the next approval request.
+
+Until ADR {{DELEGATION_ADR}} is Accepted, every coordinator power here goes to the user: approving, authorizing a third run, re-slicing, and deciding or declining a suggestion.
+
+**Breakdown first.** When the user approves an epic's breakdown for execution, clear its entries' `execution_authorized = false` and "Draft only" constraint at that approval. Do this before any check runs on its stories, so the checked entry already carries the cleared fields. Execution itself is authorized by the epic file (its Constraints or a dated user `Decision:`), or by ADR {{DELEGATION_ADR}}'s execution clause once the user approves that ADR. Either way it is local only.
+
+**Operator actions.** For a `hitl: false` story, record its human steps as ADR {{DELEGATION_ADR}} §2 says:
+- the entry's `operator_actions` list, one action per string: what the user does, where, and the observation that confirms it;
+- one `Operator action:` line in Notes per action;
+- a criterion that names each action;
+- a Description that says the story parks for them.
+
+Apply §2's test: a ticket stays `hitl: true` only when a person must act before the agent can finish and commit its work.
+
+**Risk tier.** Propose and check labels with ADR {{DELEGATION_ADR}} §4's consequence triggers. Read the story's `risk`.
+- High always runs as high.
+- Medium and low count only when the user approved that label on or after {{DELEGATION_DATE}} (ADR {{DELEGATION_ADR}} §4). Otherwise the story runs as high.
+- You may raise a label to high and log it. That only tightens the checks, which restart at the high standard.
+- Lowering a label needs the user. The coordinator never changes a label.
+
+**Production-facing (ADR {{DELEGATION_ADR}} §6).** At every refinement, including a re-approval, ask one question: does anything the story creates or changes belong to the production artifact set? That set is whatever a hosted deployment builds, applies, runs or publishes as written:
+- code under {{PRODUCTION_CODE}};
+- a database schema object, migration, role, grant, row-level policy or seed meant for a hosted database, including a reviewed design that fixes its exact shape for a later story to apply as written;
+- build, CI, deployment or hosted-environment configuration;
+- a published contract: {{PUBLISHED_CONTRACTS}}.
+
+If the answer is no, the story is local-only: everything it changes is {{LOCAL_ONLY_SET}}. These cases are decided; apply them as written:
+- **Dependency manifests, lockfiles and build or compiler config:** production, because a production build resolves and compiles through them.
+- **CI files:** production.
+- **Scripts that CI runs, now or once a story makes CI run them:** production. Every other local script is local tooling.
+- **Hosted configuration:** production. That means deployment, infrastructure-as-code and hosted-environment settings.
+- **Fixture code compiled into a build output:** local-only while only local images and tests include that output. It becomes production in the story that makes a hosted build include it.
+- **"Meant for a hosted database":** a hosted environment is to apply the object as written, or a hosted migration is generated from it. SQL that only local environments install is not.
+- **Test files, wherever they sit:** not production.
+- **Fixture code that later ships:** a fixture port, contract or module stays local-only while only fixtures, tests and local tooling import it. The story that first imports it from code in the production set, or moves it out of its fixture identity, is production-facing.
+- **Hosted runs of fixture code:** rerunning fixture code on a staging candidate does not make a story production-facing. The hosted step stays the user's.
+- **The local stack:** local container, compose and runtime-image definitions stay local-only until a story makes a hosted build use them. That story is production-facing.
+{{PRODUCTION_DECIDED_CASES}}
+- **Design that fixes a production shape:** a story is production-facing when its reviewed output is an exact field, key, grant, policy or migration order that a later story applies as written, even if it writes no migration. A design that a later story must still settle is not.
+- **Work chosen during the build:** a story that picks its change at build time, such as a refactor sweep, is production-facing unless its Boundaries confine it to local-only units.
+
+Doubt means yes. Record the answer as one Notes line: `Production-facing: yes, <the artifact and its unit>`, or `Production-facing: no, <the units it lands in and why each is local-only>`.
+- You may add the line after the checks. That is approval bookkeeping: log it as its own `--type event` line that quotes it. It does not void the readiness GO. The approval line's `checked:` hashes stay the readiness run's, and its `approved:` hash covers the line.
+- On a yes, set `plan_checkpoint = true` and `done_checkpoint = true` on the story's entry in `tickets.toml`. On a no, set neither.
+- You may change no to yes, and you log the change. Changing yes to no needs the user, and the coordinator never changes the line.
+- A production-facing story's approval always goes to the user (condition 8 under "Approval (ADR {{DELEGATION_ADR}})"). Its check runs follow "Runs by tier", as for any story.
+
+**Wording (ADR {{DELEGATION_ADR}} §8).** Write the story, and each fix, in short sentences in the project's vocabulary. Every term is defined in the story or already in use in the project. Cut text that neither the build nor its verification needs; required lines such as `Decision:`, `Operator action:` and `Production-facing:` stay. Between runs, text changes only through logged fixes.
+
+**Fresh agents only.** Start each check, each re-run and each confirmation run as a brand-new subagent for that run alone:
+- never a fork;
+- never a resumed or messaged earlier agent;
+- never one agent for both checks.
+
+{{FRESH_AGENT_HOWTO}} Its prompt is the brief below with its placeholders filled in, and nothing more: no refinement chat, no reasoning of yours, no hint of what you meant. If a fresh subagent cannot be started, stop and tell the user. For these checks this replaces the "continue inline" fallback. A review in your own context does not count.
+
+**Reading list,** given as paths: the story file; its epic file; every path in the story's References; `AGENTS.md`; the epic's `tickets.toml` with the story's entry id. Checkers never read a `.memlog.md`, a chat transcript, another story's plan file, or {{PROTECTED_PATHS}}. A plan file that the story's References cite is on the reading list; no other plan is.
+
+### Check 1: explain-back
+
+Brief: "You will build this story and know only what these files say: <reading list>. Open only these files, read-only; do not search the repository. Never open a `.memlog.md`, a chat transcript, another story's plan file (unless listed above) or {{PROTECTED_PATHS}}. Do not quote the story; explain in your own words:
+1. the outcome, and what must not change;
+2. for each numbered criterion: (a) what you must make true; (b) how you prove it: the command, what you observe, the passing result, and the part of the entry's `verify` line it serves; (c) one wrong build this criterion fails; (d) the predecessor evidence it binds (run IDs, manifests, digests, {{SOURCE_TERM}}) and where each is recorded; (e) where the work lands and whether it touches {{SOURCE_DIRS}} ({{SOURCE_TERM}}), or UNSTATED; (f) the commands you run, the {{HANDLES}} you create or use, and the {{ENV_NOUN}}s that must stay untouched;
+3. the decisions you would have to make yourself, or NONE;
+4. the terms you could not define.
+Mark every answer KNOWN with its `path#section`, or INFERRED. If a listed file cannot be read, answer INCOMPLETE and name it."
+
+Then compare each answer with what you meant. Mark each criterion's (a) to (f):
+- MATCH;
+- GAP, when it is INFERRED or UNSTATED, or the point appears under item 3 or 4;
+- DIVERGE, when it differs from what you meant.
+
+**What blocks (ADR {{DELEGATION_ADR}} §8).** These always block the approval request:
+- a DIVERGE;
+- a readiness FAIL;
+- a missing prerequisite;
+- a contradiction;
+- a GAP, item 3 included, where the reader's own choice could change what is built or how it is verified: an interface, an output, an error, a file, an order, evidence or a project;
+- a GAP on (a) or (c);
+- on a high-risk story, any item-3 decision.
+
+Fix the ticket text until a fresh reader gets these right, and never argue a comprehension gap away. Every other GAP is a suggestion and does not block: wording, traceability, or a term clear from context. Examples are, on a medium- or low-risk story, a non-ALLOWED internal detail that changes nothing observable, or a term where no plausible reading changes what is built or how it is verified. A GAP is a suggestion only when its memlog line says so, with the reason; log it that way, then fix it in a fix round or decline it under "Declined suggestions". Never reclassify a DIVERGE or a readiness FAIL. Doubt about a GAP's class means it blocks. On a high-risk story, an open choice that R1 catches also blocks through readiness.
+
+For a medium- or low-risk story, two things differ:
+- The fresh reader of a fix is the readiness confirmation run.
+- A choice of internal structure under item 3 that the story's `Builder choices:` line allows is marked ALLOWED. It is not a GAP and does not block. ALLOWED never applies to a high-risk story.
+
+A term that only the building agent needs is put to the user as an escalation. INCOMPLETE is never a clean result.
+
+**Scoped re-run (ADR {{DELEGATION_ADR}} §8).** A re-run of the explain-back after fixes covers its scope only:
+- each criterion that a fix line since the last explain-back run changed, including through a fix outside the criteria (Notes, Boundaries, the `verify` line or the Description) to text the criterion relies on;
+- each criterion that uses a term a fix line defined or changed;
+- each criterion whose prior marks were not all MATCH or ALLOWED.
+
+Each fix line names the criteria it brings into scope, or says none. The scope is the union of what those lines name, plus the criteria in the last item above. The reader gets the same reading list and the whole final story as context. The brief adds one line after item 4: "Answer item 2 only for criteria <numbers>; answer items 1, 3 and 4 for the whole story." Mark only the criteria in scope; the others keep their prior MATCH or ALLOWED marks. The run's memlog line names its scope and the fix lines it comes from, and records the story and entry hashes as read. A full run is always allowed, and doubt about the scope means a full run. The first explain-back run after a rewrite, and the first on each story a re-slice produces, is a full run; marks never carry across a `rewrite (re-check rules)` or `re-slice (re-check rules)` line. Readiness (Check 2) always judges the whole story.
+
+### Check 2: readiness go/no-go
+
+Brief: the same reading list and the same "never open" line as Check 1, then: "You may also Grep or Glob the repository, read-only, to check that cited things exist; a file the story plans to create is not a finding. Judge each item below. For each give its ID, PASS or FAIL, the criteria involved, the evidence (`path#section` or a grep hit) and what is missing. End with `VERDICT: GO` only if every item passes, otherwise `VERDICT: NO-GO`. If a listed file cannot be read, the verdict is INCOMPLETE.
+- <the R1 line for the story's risk tier, then R2 to R12, one bullet each, word for word from the entry named below>"
+
+The items have one home: the `checks.ticket` entry "Readiness items R1–R12", in the Ticket section of `{skill-root}/references/validate-checks.md` (ADR {{DELEGATION_ADR}} §7). Keep no other copy. Give the checker only the R1 line for the story's tier: "R1 Zero decisions" for high, "R1 Bounded choices" for medium or low.
+
+NO-GO and INCOMPLETE block the approval request like a blocking explain-back gap.
+
+### Findings, runs and the record
+
+- **Triage.** You may contest a finding only with evidence the checker could read. If only knowledge outside the files refutes it, put it to the user, since the builder will not have that knowledge either. Never change a finding's severity. "This was intentional" is not evidence.
+- **Findings.** A finding is a GAP or DIVERGE mark in a run's explain-back comparison, or a FAIL in its readiness result, as logged in the memlog. A blocking finding is one that "What blocks" lists; any other GAP is a suggestion.
+- **Sweep before a re-run (re-check rules).** Before any re-run, check the whole story for gaps of the same kind as each finding, not only the flagged lines. Fix those too, under the same rules and fix kinds as that finding's own fix. Log each as its own fix line that names its finding as "proactive, same class as <finding>". It joins the scope of a scoped re-run.
+- **Declined suggestions (re-check rules).** Record a declined suggestion as a dated `--type decision` line in the epic's `.memlog.md`, by the coordinator under ADR {{DELEGATION_ADR}} §9 or by the user. It counts as a declining `Decision:` for Validate's no-re-raise rule: do not re-raise it without new evidence, and log a later run's repeat of it as declined, not as a new finding.
+- **Stop (re-check rules).** When an explain-back run that is the story's third or later, scoped or full, still has a blocking finding, no fix round follows. Runs are counted by the story's explain-back lines since its latest `rewrite (re-check rules)` or `re-slice (re-check rules)` line. Rewrite the story or re-slice it:
+  - A rewrite is new text. A rewrite touching anything that the High rule under "Runs by tier" calls scope goes to the user. Log it as one `--type event` line whose text starts with the date, then `rewrite (re-check rules)`, and names the story. Its runs count from 1 after that line, and its first explain-back run is a full run; no mark carries across that line. A story is rewritten once.
+  - If the rewrite's third run also has a blocking finding, re-slice the story.
+  - A re-slice changes the epic's breakdown, so it goes through Validate's Set and Dependencies sections. Log it as one `--type event` line whose text starts with the date, then `re-slice (re-check rules)`, and names the stories it produces. The coordinator may make it under ADR {{DELEGATION_ADR}} §9, which covers splits, unless it changes scope or Requirements coverage; that goes to the user. The first explain-back run on each story it produces is a full run. A story produced by a re-slice that reaches the stop goes to the user.
+  - This caps the coordinator's standing authority to authorize more runs. A dated user decision for a specific story still overrides it.
+- **Runs by tier** (ADR {{DELEGATION_ADR}} §4):
+  - **High:** after fixing, re-run each check once, each with a new subagent. A further run needs the user's authorization, except one delegated third run (ADR {{DELEGATION_ADR}} §5). While ADR {{DELEGATION_ADR}} is Accepted, the coordinator may authorize that round when:
+    - both checks of the second run are logged, neither is INCOMPLETE, and the explain-back has no DIVERGE;
+    - the next run would be the story's third;
+    - every blocking finding of the second run is answered by a fix of one of four kinds, and every suggestion by such a fix or a declining decision line, within the story's scope, its cited ADRs and its Boundaries:
+      - settle a builder choice: record one option, which those already allow, for an open choice the run named (item 3, a GAP on (a) to (f), or an R1 FAIL), adding no other obligation;
+      - add a test: a pass or fail observation and its command, proving what an existing criterion already requires. It may add that command to the `verify` line and its result to the criterion's local evidence;
+      - define a term the story already uses, adding no obligation;
+      - name the command for an existing pass or fail observation.
+
+    A fix that touches scope (the outcome, what a criterion requires beyond the settled choice, a criterion added or removed, the Boundaries, `after`, `hitl`, `risk`, a handoff, or anything another entry consumes), a reserved area (condition 5 under "Approval (ADR {{DELEGATION_ADR}})") or an ADR conflict (the story or a fix against an ADR or a dated `Decision:`) sends the whole story to the user. So does doubt about a fix's kind.
+
+    Before the first fix, the coordinator appends one `--type decision --by coordinator` line. Its text starts with the date, then `third run authorized (delegated, ADR {{DELEGATION_ADR}} §5)`, and names the story and its tier, the second run's lines, each finding with its fix kind (or, for a suggestion, its declining decision line), and that no fix touches scope, a reserved area or an ADR conflict. Each fix line also names its kind and the `path#section` that allows it. The third run runs both checks, each with a new subagent, and each check's line says it is delegated. It is clean when the explain-back has no DIVERGE and no blocking GAP and readiness is GO; the coordinator may then approve under "Approval (ADR {{DELEGATION_ADR}})". Otherwise no fix follows it: a blocking explain-back finding goes under "Stop", and anything else goes to the user.
+  - **Medium or low:** each check runs once. After fixes, one readiness-only confirmation run with a new subagent is allowed, but only when every fix answers a finding of that run and is one of two kinds:
+    - it defines a term the story already uses, and adds no obligation;
+    - it names the command for an existing pass or fail observation.
+
+    Any other change touches a requirement and goes to the user. Requirements include what a criterion requires, the scope, the Boundaries, `after`, `hitl`, `risk`, the `verify` line, evidence fields, commands, project handles and predecessor bindings. A DIVERGE cannot be cleared by this run.
+  - **After the last run:** no fix follows it. Put what is still open to the user. Each item the user accepts becomes a dated `Decision:` line in the story's Notes. Otherwise the story stays `refined: false`. After an explain-back run that is the story's third or later and has a blocking finding, "Stop" applies instead.
+- **Single operator.** Nothing in the checks, the fixes or the ticket may need a second person. Agents check. The user decides, or the coordinator does under "Approval (ADR {{DELEGATION_ADR}})".
+- **Record.** After each run, append one `--type event` line per check to the epic's `.memlog.md` through `{project-root}/_bmad/scripts/memlog.py`. Each line holds:
+  - the run number;
+  - each criterion's marks, with the reason for every GAP, DIVERGE or ALLOWED;
+  - the readiness verdict with each FAIL;
+  - what you changed.
+
+  Each readiness line also records two hashes, as the checker read them:
+  - the story hash: `shasum -a 256 <story file>`;
+  - the entry hash: the SHA-256 of the story's own entry block in `tickets.toml`, from its `[[entry]]` line up to the next one or the end of the file. Compute it with:
+    `python3 -c "import sys,re,hashlib;t=open(sys.argv[1],encoding='utf-8').read();b=[x for x in re.split(r'(?m)^(?=\[\[entry\]\][ \t]*$)',t) if x.startswith('[[entry]]') and re.search(r'(?m)^id = '+re.escape(sys.argv[2])+r'[ \t]*$',x)];assert len(b)==1,'entry %s: %d blocks'%(sys.argv[2],len(b));print(hashlib.sha256(b[0].encode('utf-8')).hexdigest())" <tickets.toml> <id>`
+
+  Record each fix as its own `--type event` line. Name the finding it answers (run, check, criterion, and the mark or item) and quote the text before and after the fix. Never write results into the story file, because the next checker reads it.
+- **Approval request.** It shows:
+  - the story's risk tier;
+  - the explain-back comparison: each criterion's marks and the fixes made;
+  - the readiness verdict, with every item's PASS or FAIL;
+  - each open item, with the `Decision:` it would need.
+
+  The coordinator applies "Approval (ADR {{DELEGATION_ADR}})" to the request, or shows it to the user on the operator checklist.
+
+### Approval (ADR {{DELEGATION_ADR}})
+
+The coordinator approves in the user's place only while ADR {{DELEGATION_ADR}} is Accepted, and only when all eight conditions hold. Otherwise the request goes to the user, batched on the operator checklist. Doubt about any condition also goes to the user.
+
+1. The latest explain-back run has no DIVERGE.
+2. Every blocking GAP of that run (see "What blocks"), and every readiness FAIL, is fixed in the text; every other GAP is fixed or declined in a logged decision. The latest readiness run returned `VERDICT: GO` on the final text: the story file and the story's own entry, as that run's memlog line hashes them.
+   - Any edit after that run voids the GO, except approval bookkeeping, which includes a logged `Production-facing:` line. An unchecked fix is never accepted.
+   - A high-risk story gets no run beyond its second, except a delegated third run under "Runs by tier". A medium- or low-risk story gets at most its one confirmation run. After a rewrite under "Stop", runs count from 1 again.
+3. Nothing is pending for the user. There is:
+   - no `Assumption:` awaiting confirmation;
+   - no `Open question:` for the user;
+   - no `Source conflict:` without a later `Decision:`;
+   - no `Unknown:` line in the story file;
+   - no finding that only outside knowledge refutes;
+   - no open item that would need a `Decision:`.
+
+   The refinement changed only the story file and its own entry. It did not change `after` or `hitl`, and it did not lower `risk`.
+4. `hitl: false` in both the file and the entry.
+5. The story's criteria, verify line, evidence and operator actions stay out of these areas:
+   - **Gate work of its own.** The story must not produce or claim evidence for a formal gate, or run a hosted or gated step itself. The formal gates are {{GATES_LIST}}, and every ID that any entry's `validation_gates` lists. The story's own `validation_gates` counts only when a criterion or the `verify` line produces or claims that gate's evidence. Three things are not gate work:
+     - naming a gate or item that a later entry or run owns, when the story's own evidence is labelled local (R3);
+     - a local, R3-labelled suite that a later gate run reuses;
+     - an entry marked as a "contribution" to a gate, when its output is labelled local and the gate owner re-runs it. It counts if it claims gate evidence itself.
+   - **Hosted work:** hosted provisioning, a deploy, or any run against a non-local target, including as an operator action.
+   - **Spend.**
+   - **Legal, counsel or licensing:** any question that needs the user's or counsel's judgment. Implementing a recorded rule exactly{{LEGAL_RULE_EXAMPLE}} does not count.
+   - **Real credentials or provider accounts.** Two things do not count:
+     - local fixture credentials that only their owning scripts generate and handle;
+     - code that implements credential handling and is tested only with synthetic values.
+6. The story was checked at an approved tier. A high label always counts. A medium or low label counts only when the user approved it on or after {{DELEGATION_DATE}}.
+7. The story is approved for execution. The entry carries neither `execution_authorized = false` nor a "Draft only" constraint. Execution is authorized by the epic file (its Constraints or a dated user `Decision:`) or by ADR {{DELEGATION_ADR}}'s execution clause, which covers local work only.
+8. The story is not production-facing. Its Notes say `Production-facing: no`, and its entry sets neither `plan_checkpoint` nor `done_checkpoint` (ADR {{DELEGATION_ADR}} §6).
+
+On a delegated approval, the coordinator works in the main tree on `{{DELIVERY_BRANCH}}`, while no bmad-loop run is active there. It:
+
+1. Makes exactly two bookkeeping edits to the story file: `refined: true`, and one dated approval `Decision:` line in Notes that cites ADR {{DELEGATION_ADR}}. It makes a third only when the checks ran before the `Production-facing: no` line existed: it adds that line and logs it (ADR {{DELEGATION_ADR}} §6).
+2. Appends one `--type decision --by coordinator` line to the epic's `.memlog.md`. The text starts with the date, then `refinement approved (delegated, ADR {{DELEGATION_ADR}})`, and names:
+   - the story and its risk tier;
+   - for medium or low, the dated user decision that approved the label;
+   - the explain-back and readiness runs the approval rests on;
+   - each ALLOWED choice;
+   - that conditions 3–8 hold;
+   - `checked:` the story and entry hashes, equal to the latest readiness line's;
+   - `approved:` the story hash after bookkeeping.
+3. Runs the Ticket check with a brand-new non-fork subagent. If that check cannot start or finds anything other than a suggestion (the team rule at the end of `{skill-root}/references/validate.md`), the coordinator:
+   - sets `refined: false` again;
+   - logs why;
+   - puts the story in the user's batch. It never fixes the story and re-approves it.
+
+   The edits then stay uncommitted, and bmad-loop's dirty-initiative gate stops any later run. Before the next run, the coordinator settles them through the user, or reverts its own uncommitted edits for that story after saving them as a patch.
+4. On a clean check, commits by pathspec the story file, the epic's `tickets.toml` and the epic's `.memlog.md`. If either of the last two holds uncommitted changes that are not this story's refinement or approval, it asks the user instead.
+
+The coordinator never changes `risk` or `hitl`, never edits a check's results, never marks a gate passed, and never pushes. The user can revoke this delegation at any time.
+'''
+
+validate_after = '''
+## Findings of a Ticket check on an approved story (ADR {{DELEGATION_ADR}} §7 and §8)
+
+A team rule for the Ticket check that runs after a story's approval (`refined: true`) and before its build, R1–R12 included. Any edit to the story file or its entry would break the approval's `approved:` and `checked:` hashes and void its readiness GO, so sort that check's findings this way:
+- **Fix.** Never apply it in place. Withdraw the approval instead: set `refined: false` and log why in the epic's `.memlog.md`. The story returns through ADR {{DELEGATION_ADR}}'s fix and run rules; for a delegated approval, they include step 3 of "Approval (ADR {{DELEGATION_ADR}})" in `{skill-root}/references/ticket.md`.
+- **Suggest.** An observation that fails no check in the Ticket section (a built-in bullet, a `checks.ticket` entry or an R item); the sorter never reclassifies a checker's FAIL or finding as a suggestion. It goes to the coordinator, who decides it under ADR {{DELEGATION_ADR}} §9 and logs the decision in the epic's `.memlog.md` (`--type decision --by coordinator`) or as an entry in `{{DEFERRED_WORK_PATH}}`. It does not block. Adopting it edits the story file or its entry, a `Decision:` line in Notes included, so it then takes the fix path. A coordinator decision line declining a suggestion counts as a declining `Decision:` for the no-re-raise rule above.
+- **Ask the user** only about an operator action, a hosted run, a gate, spend, a legal matter, credentials, or a finding with no defensible recommendation. An ask about a FAIL, an operator action, a hosted run, a gate, spend, a legal matter or credentials withdraws the approval (`refined: false`, logged) until the user answers. Only an ask with no defensible recommendation and no FAIL does not block.
+
+Only a gap, a missing prerequisite or a contradiction blocks (re-check rules); in this check, every FAIL counts as one. Everything else is a suggestion, which does not block, or an ask under the rule above. Every FAIL is a fix or an ask, never a suggestion. Any FAIL of R1 to R12 blocks the build until it is resolved. A withdrawal by this second pass counts as a finding of the story's latest run. It opens no new budget, and a story withdrawn twice by the second pass goes to the user.
+'''
+
+checks.ticket = [
+  '''Pre-approval checks recorded (ADR {{CHECKS_ADR}}, amended by ADR {{DELEGATION_ADR}}).
+
+Scope: a story with `refined: true` whose latest approval is dated on or after {{CHECKS_DATE}}, when ADR {{CHECKS_ADR}} took effect. That approval is either:
+- the user's "refinement approved" decision in the epic's `.memlog.md`; or
+- from {{DELEGATION_DATE}}, the coordinator's dated `--by coordinator` decision whose text, after the date, starts "refinement approved (delegated, ADR {{DELEGATION_ADR}})".
+
+For that approval, the epic's `.memlog.md` holds the explain-back and readiness results of each check run: the per-criterion marks and the readiness verdict. Missing results are a finding. A scoped explain-back run (ADR {{DELEGATION_ADR}} §8) marks the criteria in its scope, and the others keep their prior MATCH or ALLOWED marks. It counts only when its line names its scope, every fix line since the previous explain-back run names the criteria it brings into scope (or none), and the scope holds the union of what those lines name plus every criterion whose prior marks were not all MATCH or ALLOWED; otherwise its results are missing. The first explain-back run after a `rewrite (re-check rules)` line, and the first on each story a `re-slice (re-check rules)` line produces, must be full; a scoped run there, or a mark carried across such a line, means missing results. Runs count from the latest such line, if there is one. A proactive fix line names the finding it answers as "proactive, same class as <finding>". A GAP whose memlog line does not mark it a suggestion with a reason counts as blocking.
+
+A delegated approval is also a finding when any of these holds:
+- the story has `hitl: true`;
+- the latest explain-back run has a DIVERGE;
+- a blocking GAP of that run (re-check rules, "What blocks"), an item-3 decision of that kind included, has no fix line before the latest readiness run;
+- another GAP of that run has neither a fix line nor a declining decision line;
+- a high-risk story has any ALLOWED mark;
+- the latest readiness run is not GO;
+- the approval line's `checked:` story and entry hashes differ from the latest readiness line's;
+- the story file's current SHA-256 differs from `approved:`;
+- the story's current entry-block hash differs from `checked:`;
+- a fix line before a confirmation run lacks the finding it answers or its before and after text;
+- such a fix is something other than defining a term already used or naming the command for an existing pass or fail observation;
+- the story was checked at the medium or low standard without a dated user approval of that label on or after {{DELEGATION_DATE}};
+- the entry carries `execution_authorized = false` or a "Draft only" constraint;
+- neither the epic file nor ADR {{DELEGATION_ADR}}'s execution clause authorizes the story's execution;
+- ADR {{DELEGATION_ADR}} at the approval line's commit is not Accepted: find the commit with `git blame --porcelain -L n,n <memlog>` on the approval line, then read the Status in `git show <sha>:{{ADR_DIR}}/{{DELEGATION_ADR}}-delegated-story-approval-and-standing-loop-authority.md` (for an uncommitted line, the working-tree file);
+- from {{PRODUCTION_GATES_DATE}}, the story's Notes lack `Production-facing: no`, its entry sets `plan_checkpoint` or `done_checkpoint`, or the story names a landing unit inside the production artifact set (ADR {{DELEGATION_ADR}} §6).
+
+Whoever approves, an approval dated on or after {{PRODUCTION_GATES_DATE}} is a finding when the story's Notes have no `Production-facing:` line, or when the line says yes and the entry lacks `plan_checkpoint = true` or `done_checkpoint = true`.
+
+A third run that no dated user decision authorized (ADR {{DELEGATION_ADR}} §5) is a finding, whoever approves, when any of these holds:
+- no `--by coordinator` line whose text, after the date, starts "third run authorized (delegated, ADR {{DELEGATION_ADR}} §5)" sits after the second run's lines and before the first fix after them;
+- the story is not high risk; the second run lacks either check; either check is INCOMPLETE; or its explain-back has a DIVERGE;
+- a blocking finding of the second run is missing from that line or has no fix line before the third run, or a suggestion of that run has neither a fix line nor a declining decision line;
+- a fix line lacks its finding, its kind, the `path#section` that allows it, or its before and after text;
+- a fix is none of the four kinds (settle a builder choice, add a test, define a term already used, name the command for an existing observation), or it touches scope, a reserved area or an ADR conflict;
+- the third run lacks either check, or a fix or a fourth run follows it, with no `rewrite (re-check rules)` line between them and without a dated user decision;
+- for a delegated approval, the third run's explain-back has a DIVERGE or a blocking GAP, or its readiness verdict is not GO.
+
+Whoever approves, the stop (ADR {{DELEGATION_ADR}} §8) is a finding when:
+- a fix line follows an explain-back run that was the story's third or later (counted since its latest `rewrite (re-check rules)` or `re-slice (re-check rules)` line) and had a blocking finding, with neither a `rewrite (re-check rules)` line nor a dated user decision for that story between them;
+- the story has more than one `rewrite (re-check rules)` line, without a dated user decision allowing the second;
+- a story that a `re-slice (re-check rules)` line produced reaches the stop, and a fix line, rewrite or re-slice follows without a dated user decision.
+
+Not a finding:
+- a story with `refined: false`;
+- an entry not yet approved;
+- an approval that predates ADR {{CHECKS_ADR}}{{PRE_ADOPTION_APPROVALS}}. A later re-approval of any of them is covered;
+- under the stop, a run or fix line whose commit is an ancestor of {{ADOPTION_COMMIT}}, the `{{DELIVERY_BRANCH}}` commit this adoption merges onto. Find the line's commit with `git blame --porcelain -L n,n <memlog>`, then test it with `git merge-base --is-ancestor <sha> {{ADOPTION_COMMIT}}`. An all-zero sha (an uncommitted line) is never exempt. Stories in flight then{{IN_FLIGHT_STORIES}} keep their logged runs.''',
+  '''Readiness items R1–R12 (ADR {{CHECKS_ADR}} Check 2; ADR {{DELEGATION_ADR}} §7).
+
+This entry is the one home of these items. Before approval, ADR {{CHECKS_ADR}}'s Check 2 copies them into its brief. Here they run a second time, after approval and before the build. This pass is not an ADR {{CHECKS_ADR}} readiness run; log it as a Ticket check line. In the record audit, "readiness run" means a Check 2 run only.
+
+Scope: a story with `refined: true` whose build has not started (`tickets.py status` shows it in `backlog`), when its latest approval came after this entry was committed: the approval line in the epic's `.memlog.md` is uncommitted, or the commit that added that line already contains this entry. Check it with `git blame --porcelain -L n,n <memlog>` on the approval line (an all-zero sha means uncommitted), then `git show <sha>:_bmad/custom/bmad-agent-po.toml | grep -F 'Readiness items R1–R12'`.
+
+Judge the items from what the builder reads: the story file, its epic file, every path in the story's References, `AGENTS.md`, and the story's entry in the epic's `tickets.toml`. You may also Grep or Glob the repository, read-only, to check that cited things exist; a file the story plans to create is not a finding. The `.memlog.md` is not evidence for these items. A file on that list that cannot be read is a finding.
+
+Apply only the R1 line for the story's tier. The tier is medium or low only when `risk` is medium or low and the user approved that label on or after {{DELEGATION_DATE}} (ADR {{DELEGATION_ADR}} §4); otherwise it is high.
+- High: R1 Zero decisions: no open choice of schema, API or problem shape, error behavior, dependency, location, port or project name is left to the builder.
+- Medium or low: R1 Bounded choices: no open choice of schema, API or problem shape, error behavior, dependency, location (the unit the work lands in), port, project name, or anything a handoff or another story consumes is left to the builder. Choices of internal structure inside that unit and within the Boundaries (module and file layout, internal names, private helpers and types, test layout) may stay open only through a `Builder choices:` line in the story's Notes that names the unit and says the builder records each choice in the build plan.
+
+Then R2 to R12:
+- R2 Criteria: numbered Given/When/Then, each provable without pointing at code, each with a pass and a fail observation; together they fail a wrong build.
+- R3 Evidence: each criterion names the artifact it leaves and that artifact's fields; all evidence is labelled local, unless a dated `Decision:` in the story authorizes hosted evidence for that criterion; nothing claims to pass {{GATES_SHORT}}.
+- R4 Verify line: someone other than the builder can run it, and a criterion covers every part of it.
+- R5 Predecessor evidence: each run ID, manifest, digest and {{SOURCE_TERM}} appears where it is cited and agrees across the files.
+- R6 Prerequisites: every story in `after` is done or in review, and its handoff exists as the story describes it.
+- R7 Files and modules: you can name the unit the work lands in ({{UNIT_KINDS}}) and whether it changes the {{SOURCE_TERM}} (any change under {{SOURCE_DIRS}} does). No source path is needed; the ticket rules ban them.
+- R8 Commands: the scripts, subcommands and flags exist, and none needs {{BANNED_HOST_TOOLS}}.
+- R9 {{HANDLES|cap}}: each handle is created by the story or named as read-only, every {{ENV_NOUN}} that must stay untouched is named, and no step needs {{PROTECTED_RESOURCES}} or a credential file.
+- R10 Agreement: nothing contradicts the code, an ADR, the epic or a dated `Decision:` line (a contradiction is a blocker), and every cited thing exists.
+- R11 Size: it fits one bmad-loop session within the session timeout ({{SESSION_TIMEOUT_MIN}} minutes on {{SESSION_TIMEOUT_DATE}}), or the story says where it splits.
+- R12 Boundaries: what must not change is listed, and each item can be checked.
+
+For each item give its ID, PASS or FAIL, the criteria involved, the evidence (`path#section` or a grep hit) and what is missing. An item without that evidence does not pass. The story passes only if all twelve pass; each FAIL is a finding and blocks the build until it is resolved.
+
+Not a finding:
+- a story with `refined: false`, which Check 2 covers;
+- a story whose state in `tickets.py status` is past `backlog`;
+- an approval committed before this entry, whose logged readiness runs keep their standing. A later re-approval of such a story is covered.''',
+]

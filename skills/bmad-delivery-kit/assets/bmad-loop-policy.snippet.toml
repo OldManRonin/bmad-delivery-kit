@@ -1,0 +1,52 @@
+# bmad-delivery-kit {{KIT_VERSION}}: the .bmad-loop/policy.toml keys the delivery process relies on.
+# Merge these into the project's policy key by key; keep every other key as it is.
+# .bmad-loop/policy.toml is machine-local (bmad-loop init gitignores it), so merge it on each machine that runs the loop.
+# No secrets belong here. Permission-bypass flags in extra_args are a per-machine choice; this snippet sets none.
+
+[stories]
+source = "tickets"            # the process runs on the BMad v7 ticket tree (tickets.toml, refined: true, plan_checkpoint)
+
+[gates]
+mode = "per-epic"             # the run pauses at each epic boundary for the user's review (ADR {{DELEGATION_ADR}} §3)
+retrospective = "notify"      # records the verdict `unknown` and pauses once; the user closes the epic with Sofia's closure check
+
+[limits]
+session_timeout_min = {{SESSION_TIMEOUT_MIN}}   # R11 sizes every story to fit one session within this bound
+
+[tickets]
+mark_done = "auto"            # standing done authority (§3): a loop commit after verify and review is done.
+                              # The coordinator switches it to "never" for one production-facing run only, and back (§6 D).
+thorough_review = "high-risk" # high-risk stories also get the dev session's thorough inline review (§4)
+
+[review]
+enabled = true
+trigger = "always"            # every dev pass gets an independent review session, not only when the dev pass asks for one
+on_timeout = "retry"
+on_status_contradiction = "escalate"
+
+[operator]
+enabled = true                # human steps park a story at awaiting-operator instead of halting the loop (§2); finish with `bmad-loop confirm`
+
+[sweep]
+auto = "never"                # sweep commits skip the story checks; the coordinator starts sweeps itself and reviews every sweep commit
+
+[verify]
+commands = {{VERIFY_COMMANDS}}   # deterministic gates after a clean review, before commit; a person other than the builder can run them
+
+[environment]
+probes = {{ENV_PROBES}}       # keep probes project-independent: a probe tied to one local environment fails when that environment is recreated
+
+[adapter]
+name = "{{DEV_ADAPTER}}"      # the dev session ({{DEV_AGENT}})
+
+[adapter.review]
+name = "{{REVIEW_ADAPTER}}"   # the review session ({{REVIEW_AGENT}}); a different model from the dev session gives a second opinion
+model = "{{REVIEW_MODEL}}"    # empty = the CLI's default model
+
+[adapter.triage]
+name = "{{REVIEW_ADAPTER}}"   # sweep triage runs on the reviewing client
+model = "{{REVIEW_MODEL}}"
+
+[adapter.retro]
+name = "{{REVIEW_ADAPTER}}"   # automatic retrospectives run on the reviewing client
+model = "{{REVIEW_MODEL}}"
