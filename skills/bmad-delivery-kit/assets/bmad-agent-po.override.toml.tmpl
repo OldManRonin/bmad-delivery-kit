@@ -6,9 +6,10 @@
 # ADR {{DELEGATION_ADR}} §6: a production-facing story gets plan_checkpoint and done_checkpoint on its entry, and its approval goes to the user.
 # ADR {{DELEGATION_ADR}} §7: readiness items R1–R12 live only in `checks.ticket`; Check 2 copies them, and the post-approval Ticket check runs them again.
 # ADR {{DELEGATION_ADR}} §8 (re-check rules): wording, what blocks, scoped explain-back re-runs, a sweep before each re-run, declined suggestions, and a stop after a third run.
+# ADR {{DELEGATION_ADR}} §11 (known escalation classes): K1–K6 live only in a third `checks.ticket` entry; Check 2 copies them after R12, and the post-approval Ticket check runs them again. Stories cite shared recipes by section.
 # The checks adapt ideas from Google's Elephant-Goldfish Model in our own words; no EGM text is copied.
 # `refine_before` lands at the top of references/ticket.md, so the text states when it runs.
-# `checks.ticket` adds two items to the post-approval Ticket check: the record of those checks exists, and R1–R12 pass. The Ticket check still runs after approval.
+# `checks.ticket` adds three items to the post-approval Ticket check: the record of those checks exists, R1–R12 pass, and K1–K6 pass. The Ticket check still runs after approval.
 # `validate_after` lands at the end of references/validate.md: how that Ticket check's findings are sorted without editing an approved story.
 
 [workflow]
@@ -65,6 +66,8 @@ Doubt means yes. Record the answer as one Notes line: `Production-facing: yes, <
 
 **Wording (ADR {{DELEGATION_ADR}} §8).** Write the story, and each fix, in short sentences in the project's vocabulary. Every term is defined in the story or already in use in the project. Cut text that neither the build nor its verification needs; required lines such as `Decision:`, `Operator action:` and `Production-facing:` stay. Between runs, text changes only through logged fixes.
 
+**Shared recipes (ADR {{DELEGATION_ADR}} §11).** Cite a shared recipe by its `path#section`, such as `{{REVIEWER_RECIPE}}`, and list its path in References. Do not restate its commands or flags; the story gives only its own values, such as names, paths, the prompt and a time limit.
+
 **Fresh agents only.** Start each check, each re-run and each confirmation run as a brand-new subagent for that run alone:
 - never a fork;
 - never a resumed or messaged earlier agent;
@@ -114,10 +117,10 @@ Each fix line names the criteria it brings into scope, or says none. The scope i
 
 ### Check 2: readiness go/no-go
 
-Brief: the same reading list and the same "never open" line as Check 1, then: "You may also Grep or Glob the repository, read-only, to check that cited things exist; a file the story plans to create is not a finding. Judge each item below. For each give its ID, PASS or FAIL, the criteria involved, the evidence (`path#section` or a grep hit) and what is missing. End with `VERDICT: GO` only if every item passes, otherwise `VERDICT: NO-GO`. If a listed file cannot be read, the verdict is INCOMPLETE.
-- <the R1 line for the story's risk tier, then R2 to R12, one bullet each, word for word from the entry named below>"
+Brief: the same reading list and the same "never open" line as Check 1, then: "You may also Grep or Glob the repository, read-only, to check that cited things exist; a file the story plans to create is not a finding. Judge each item below. For each give its ID, PASS or FAIL, the criteria involved, the evidence (`path#section` or a grep hit) and what is missing. End with `VERDICT: GO` only if every item passes, otherwise `VERDICT: NO-GO`. If a listed file cannot be read, the verdict is INCOMPLETE. A K item whose class the story does not touch passes as not applicable, with the reason.
+- <the R1 line for the story's risk tier, then R2 to R12, then K1 to K6, one bullet each, word for word from the entries named below>"
 
-The items have one home: the `checks.ticket` entry "Readiness items R1–R12", in the Ticket section of `{skill-root}/references/validate-checks.md` (ADR {{DELEGATION_ADR}} §7). Keep no other copy. Give the checker only the R1 line for the story's tier: "R1 Zero decisions" for high, "R1 Bounded choices" for medium or low.
+The items have one home: the `checks.ticket` entry "Readiness items R1–R12", in the Ticket section of `{skill-root}/references/validate-checks.md` (ADR {{DELEGATION_ADR}} §7). Keep no other copy. Give the checker only the R1 line for the story's tier: "R1 Zero decisions" for high, "R1 Bounded choices" for medium or low. K1–K6 have one home too: the `checks.ticket` entry "Known escalation classes K1–K6" (ADR {{DELEGATION_ADR}} §11). A K FAIL is a readiness FAIL.
 
 NO-GO and INCOMPLETE block the approval request like a blocking explain-back gap.
 
@@ -151,7 +154,7 @@ NO-GO and INCOMPLETE block the approval request like a blocking explain-back gap
 
     Any other change touches a requirement and goes to the user. Requirements include what a criterion requires, the scope, the Boundaries, `after`, `hitl`, `risk`, the `verify` line, evidence fields, commands, project handles and predecessor bindings. A DIVERGE cannot be cleared by this run.
   - **After the last run:** no fix follows it. Put what is still open to the user. Each item the user accepts becomes a dated `Decision:` line in the story's Notes. Otherwise the story stays `refined: false`. After an explain-back run that is the story's third or later and has a blocking finding, "Stop" applies instead.
-- **Single operator.** Nothing in the checks, the fixes or the ticket may need a second person. Agents check. The user decides, or the coordinator does under "Approval (ADR {{DELEGATION_ADR}})".
+{{#if SINGLE_OPERATOR}}- **Single operator.** Nothing in the checks, the fixes or the ticket may need a second person.{{else}}- **Reviewer roles.** A check or a fix may name a second reviewer role, such as a lead who confirms a plan verdict; the story names the role, not a person, and nothing waits on a role the project has not filled.{{/if}} Agents check. The user decides, or the coordinator does under "Approval (ADR {{DELEGATION_ADR}})".
 - **Record.** After each run, append one `--type event` line per check to the epic's `.memlog.md` through `{project-root}/_bmad/scripts/memlog.py`. Each line holds:
   - the run number;
   - each criterion's marks, with the reason for every GAP, DIVERGE or ALLOWED;
@@ -228,14 +231,14 @@ The coordinator never changes `risk` or `hitl`, never edits a check's results, n
 '''
 
 validate_after = '''
-## Findings of a Ticket check on an approved story (ADR {{DELEGATION_ADR}} §7 and §8)
+## Findings of a Ticket check on an approved story (ADR {{DELEGATION_ADR}} §7, §8 and §11)
 
-A team rule for the Ticket check that runs after a story's approval (`refined: true`) and before its build, R1–R12 included. Any edit to the story file or its entry would break the approval's `approved:` and `checked:` hashes and void its readiness GO, so sort that check's findings this way:
+A team rule for the Ticket check that runs after a story's approval (`refined: true`) and before its build, R1–R12 and K1–K6 included. Any edit to the story file or its entry would break the approval's `approved:` and `checked:` hashes and void its readiness GO, so sort that check's findings this way:
 - **Fix.** Never apply it in place. Withdraw the approval instead: set `refined: false` and log why in the epic's `.memlog.md`. The story returns through ADR {{DELEGATION_ADR}}'s fix and run rules; for a delegated approval, they include step 3 of "Approval (ADR {{DELEGATION_ADR}})" in `{skill-root}/references/ticket.md`.
 - **Suggest.** An observation that fails no check in the Ticket section (a built-in bullet, a `checks.ticket` entry or an R item); the sorter never reclassifies a checker's FAIL or finding as a suggestion. It goes to the coordinator, who decides it under ADR {{DELEGATION_ADR}} §9 and logs the decision in the epic's `.memlog.md` (`--type decision --by coordinator`) or as an entry in `{{DEFERRED_WORK_PATH}}`. It does not block. Adopting it edits the story file or its entry, a `Decision:` line in Notes included, so it then takes the fix path. A coordinator decision line declining a suggestion counts as a declining `Decision:` for the no-re-raise rule above.
 - **Ask the user** only about an operator action, a hosted run, a gate, spend, a legal matter, credentials, or a finding with no defensible recommendation. An ask about a FAIL, an operator action, a hosted run, a gate, spend, a legal matter or credentials withdraws the approval (`refined: false`, logged) until the user answers. Only an ask with no defensible recommendation and no FAIL does not block.
 
-Only a gap, a missing prerequisite or a contradiction blocks (re-check rules); in this check, every FAIL counts as one. Everything else is a suggestion, which does not block, or an ask under the rule above. Every FAIL is a fix or an ask, never a suggestion. Any FAIL of R1 to R12 blocks the build until it is resolved. A withdrawal by this second pass counts as a finding of the story's latest run. It opens no new budget, and a story withdrawn twice by the second pass goes to the user.
+Only a gap, a missing prerequisite or a contradiction blocks (re-check rules); in this check, every FAIL counts as one. Everything else is a suggestion, which does not block, or an ask under the rule above. Every FAIL is a fix or an ask, never a suggestion. Any FAIL of R1 to R12, or of K1 to K6, blocks the build until it is resolved. A withdrawal by this second pass counts as a finding of the story's latest run. It opens no new budget, and a story withdrawn twice by the second pass goes to the user.
 '''
 
 checks.ticket = [
@@ -312,6 +315,26 @@ Then R2 to R12:
 - R12 Boundaries: what must not change is listed, and each item can be checked.
 
 For each item give its ID, PASS or FAIL, the criteria involved, the evidence (`path#section` or a grep hit) and what is missing. An item without that evidence does not pass. The story passes only if all twelve pass; each FAIL is a finding and blocks the build until it is resolved.
+
+Not a finding:
+- a story with `refined: false`, which Check 2 covers;
+- a story whose state in `tickets.py status` is past `backlog`;
+- an approval committed before this entry, whose logged readiness runs keep their standing. A later re-approval of such a story is covered.''',
+  '''Known escalation classes K1–K6 (ADR {{DELEGATION_ADR}} §11).
+
+This entry is the one home of these items. Each names a class of build stop that has already happened. Before approval, ADR {{CHECKS_ADR}}'s Check 2 copies them into its brief after R12, so a K FAIL there is a readiness FAIL. Here they run a second time, after approval and before the build, beside R1–R12; log that pass as a Ticket check line.
+
+Scope: a story with `refined: true` whose build has not started (`tickets.py status` shows it in `backlog`), when its latest approval line in the epic's `.memlog.md` is uncommitted, or the commit that added that line already contains this entry. Check it with `git blame --porcelain -L n,n <memlog>` on that line (an all-zero sha means uncommitted), then `git show <sha>:_bmad/custom/bmad-agent-po.toml | grep -F 'Known escalation classes K1–K6'`.
+
+Judge the items from the same reading list as R1–R12, with read-only Grep or Glob; the `.memlog.md` is not evidence for them. An item whose class the story does not touch passes as not applicable, with the reason.
+- K1 Reviewer launch: a story whose build starts an in-build reviewer launches it as `{{REVIEWER_RECIPE}}` describes, citing that section; only a re-approval of a story first approved before this entry may restate the section's commands instead, exactly. For any story that starts an in-build reviewer, that section's probe record has a pass row for the Claude Code version installed now (the checker may run `claude --version`).
+- K2 Parks: every park the story describes is the one bmad-loop commits (bmad-loop 0.13.2): the plan's `status: blocked` and `operator_actions:`, plus `.bmad-loop/operator/<id>.json`, in the story's own commit{{PARK_EXAMPLE}}.
+- K3 Exact claims: every exact-set or exact-count claim about an existing output (its keys, fields, lines or counts) matches the code that produces it, which the checker reads, or a committed report. A report that is not committed, such as one under `{{EVIDENCE_DIR}}/`, is not evidence; check the producing code.
+- K4 Input size: the story states a byte budget for the input of every reviewer or agent it starts (for a packaged reviewer, the package's total size), and the budget fits the model's context window. R11 limits time, not bytes, so the reviewer's time limit, set for reading that budget, fits inside R11's session timeout.
+- K5 bmad-loop version: every bmad-loop behavior the story relies on (a halt, a park, a timeout, the stall grace, a review session or a ledger write) cites the bmad-loop version it was checked on, and that version equals `bmad-loop --version` now (the checker may run it).
+- K6 Current ADRs: no ADR the story relies on is superseded, and no passage of one that it relies on is stale, that is, contradicted by a later amendment or by a later dated user decision in a file on the reading list.
+
+For each item give its ID, PASS or FAIL, the criteria involved, the evidence (`path#section`, a grep hit, or for K1 and K5 the recorded version beside the installed one) and what is missing. An item without that evidence does not pass. Each FAIL is a finding and blocks like an R-item FAIL: NO-GO in Check 2, and here the build waits until it is resolved.
 
 Not a finding:
 - a story with `refined: false`, which Check 2 covers;

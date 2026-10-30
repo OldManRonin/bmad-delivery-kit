@@ -13,11 +13,13 @@ This skill installs one delivery process into the BMad project you are working i
 
 | File | How |
 |---|---|
-| `_bmad/custom/bmad-agent-po.toml` | merged through `bmad-customize`, keeping existing entries: `workflow.refine_before`, `workflow.validate_after`, two `workflow.checks.ticket` entries, and a header comment with the kit version |
+| `_bmad/custom/bmad-agent-po.toml` | merged through `bmad-customize`, keeping existing entries: `workflow.refine_before`, `workflow.validate_after`, three `workflow.checks.ticket` entries (the record audit, R1–R12, K1–K6), and a header comment with the kit version |
 | `_bmad/custom/bmad-delivery-kit.values.toml` | the parameter values used, for upgrades |
 | `<adr-folder>/<N>-gate-story-approval-on-fresh-context-checks.md` | new ADR, status Proposed |
 | `<adr-folder>/<N+1>-delegated-story-approval-and-standing-loop-authority.md` | new ADR, status Proposed |
 | the ADR index, if the project keeps one | two rows |
+| the file `REVIEWER_RECIPE` names | the in-build reviewer recipe, with an empty probe record, unless that section already exists |
+| `.gitignore` | the local evidence folder, if it is not ignored yet |
 | `.bmad-loop/policy.toml` | the snippet's keys merged in; machine-local |
 
 ## Ground rules
@@ -51,6 +53,7 @@ Check everything below. Then report every failure together.
 
 **Recommended.** Warn about these and continue:
 - the `bmad-walkthrough` skill, which done reviews use;
+- `claude` and `tmux`, which the in-build reviewer recipe uses;
 - `bmad-loop-resolve`;
 - an active initiative with a `tickets.toml`;
 - `[stories] source = "tickets"`, which step 6 sets.
@@ -84,6 +87,8 @@ Specific rules:
 
   The template already holds the generic decided cases. `PRODUCTION_DECIDED_CASES` holds only extra, project-specific ones, such as which real folders count as hosted configuration or local stack; add one for each borderline path you find, never one that restates or weakens a generic case. This set decides what delegation may approve, so step 4 shows it to the user on its own.
 - **Adapters.** If the policy's dev and review adapters are the same vendor, recommend a different vendor for review, as `lessons.md` 18 explains. Do not force it.
+- **Operators.** `SINGLE_OPERATOR` is `"true"` unless `AGENTS.md` or the user names a second reviewer role, such as a lead who confirms plan verdicts. With `"false"`, a check or fix may name such a role, never a person.
+- **Evidence and the reviewer recipe.** `EVIDENCE_DIR` is the project's git-ignored local evidence folder; if none exists, recommend `.local-evidence` and adding it to `.gitignore`. `REVIEWER_RECIPE` keeps its default unless the project already has a section "Launching an in-build reviewer". `PARK_EXAMPLE` stays empty until the project has a committed park.
 
 Ask only what you cannot infer. Ask in one batch, each question with the answer you recommend. Write the values to `values.toml` in scratch, all as strings. No value may contain `{{`, `}}` or `'''`. `ENV_PROBES` is the exception: a probe that needs braces is merged by hand in step 6.
 
@@ -93,7 +98,7 @@ Ask only what you cannot infer. Ask in one batch, each question with the answer 
 python3 {skill-root}/scripts/render_templates.py render --values <scratch>/values.toml --out <scratch>/rendered
 ```
 
-The script fails on a missing or `@infer` value, a surviving `{{`, or TOML that does not parse; fix the value and render again. Read the four rendered files.
+The script fails on a missing or `@infer` value, a surviving `{{`, or TOML that does not parse; fix the value and render again. Read the five rendered files: the override, two ADRs, the policy snippet and `in-build-reviewer.md`.
 
 If the ADR folder has its own template, such as `0000-template.md` with different headings, map the rendered ADRs onto it. Drop no content.
 
@@ -106,7 +111,7 @@ Run `bmad-customize` for `bmad-agent-po`, team scope (`_bmad/custom/bmad-agent-p
   - Add the rendered header comments after the file's first line.
   - Put the kit keys inside the existing `[workflow]` table. Never add a second `[workflow]` header. If the file uses a `[workflow.checks]` table, add `ticket = [...]` there.
   - `refine_before` and `validate_after` are strings, and an override's string replaces the skill's. If the project already sets one, keep its text in the same string: the kit's text first, then a line `<!-- project rules below, kept by bmad-delivery-kit -->`, then the project's text.
-  - `checks.ticket` is a list, and an override's list appends to the skill's. Keep existing entries first, then the kit's two.
+  - `checks.ticket` is a list, and an override's list appends to the skill's. Keep existing entries first, then the kit's three.
 
 Build the merged file in scratch, then show:
 1. `diff -u` of the current override against the merged file;
@@ -117,13 +122,15 @@ Wait for an explicit yes, then write. Write `_bmad/custom/bmad-delivery-kit.valu
 
 Then run bmad-customize's verify: `uv run {project-root}/_bmad/scripts/resolve_customization.py --skill <po-skill-dir> --project-root {project-root} --key workflow`. Confirm that the three keys hold the kit's text.
 
-### 5. Write the two ADRs
+### 5. Write the two ADRs and the reviewer recipe
 
 Check that both numbers are still free. Write the rendered ADRs to these paths:
 - `<adr-folder>/<CHECKS_ADR>-gate-story-approval-on-fresh-context-checks.md`;
 - `<adr-folder>/<DELEGATION_ADR>-delegated-story-approval-and-standing-loop-authority.md`.
 
-If the project keeps an ADR index, such as a table in `docs/architecture/README.md`, add both rows. Show the diff and wait for a yes. Both ADRs stay **Proposed**.
+If the project keeps an ADR index, such as a table in `docs/architecture/README.md`, add both rows. Both ADRs stay **Proposed**.
+
+Write the reviewer recipe: if the file `REVIEWER_RECIPE` names (the part before `#`) has no section of that name, write `rendered/in-build-reviewer.md` there, or append its section to the existing file. If the section exists (an upgrade), replace it from its heading through the probe record's header rows with the new render, and keep every existing probe-record row below them; rows from before 1.0.1 get `1.0.0 or earlier` in the new "Recipe (kit version)" column. A pass row counts only for its Claude Code version and its recipe version, so an upgraded recipe needs a new probe run before the next reviewer launch. If `EVIDENCE_DIR` is not git-ignored (`git check-ignore -q <EVIDENCE_DIR>/x` fails), add it to `.gitignore`. Show one diff for the ADRs, the index, the recipe and `.gitignore`, and wait for a yes. The probe record starts empty: the coordinator runs the probe before the first build that launches a reviewer.
 
 ### 6. Merge the policy keys
 
@@ -148,7 +155,7 @@ bmad-loop validate
 
 `bmad-loop validate` must print a line containing `ok: policy OK`. Its `FAIL:` lines are accepted only when each is `git worktree is not clean`, which is expected because the kit's files are uncommitted, or appears word for word in the step-1 baseline. Any other `FAIL:` line is a failure. The render must not print `HALT:`. In the newest generation folder under `_bmad/render/bmad-agent-po/*/*/`, check that:
 - `references/ticket.md` contains `## Fresh-context checks before approval`;
-- `references/validate-checks.md` contains `Pre-approval checks recorded` and `Readiness items R1–R12`;
+- `references/validate-checks.md` contains `Pre-approval checks recorded`, `Readiness items R1–R12` and `Known escalation classes K1–K6`;
 - `references/validate.md` contains `## Findings of a Ticket check on an approved story`;
 - no `{{` remains in `references/`.
 
@@ -165,14 +172,14 @@ Report:
 
 Then list the user's next steps:
 1. Read and accept both ADRs. Until ADR `<DELEGATION_ADR>` is Accepted, every approval goes to the user. Its standing authority (§9) and standing commits (§3) also start only then.
-2. Commit the override, the values file, the ADRs and the index. The kit committed nothing.
+2. Commit the override, the values file, the ADRs, the index, the reviewer recipe and `.gitignore`. The kit committed nothing.
 3. Approve the risk relabel and the `hitl` reclassification (ADR §2, §4), then each epic's breakdown for execution.
 4. Start the coordinator with the `/loop` prompt in `references/coordinator.md`, filled in, and set up the operator checklist.
-5. Run the isolation probe once (`coordinator.md`).
+5. Run the isolation probe once (`coordinator.md`), and the in-build reviewer probe before the first build that launches a reviewer (the recipe's "Probe"; K1 fails until its record has a pass row for the installed Claude Code).
 
 ## Upgrade
 
-1. **Versions.** Read the installed version with `check-override`, and this kit's with `render_templates.py version`. If they are equal, report that and stop. If the installed one is newer, stop.
+1. **Versions.** Read the installed version with `render_templates.py installed-version _bmad/custom/bmad-agent-po.toml`, and this kit's with `render_templates.py version`. If they are equal, report that and stop. If the installed one is newer, stop.
 2. **What changed.** Read README.md's "Versions" for every version after the installed one: the rule changes and any new parameters. Infer or ask for the new parameters as in step 2. The other values come from `_bmad/custom/bmad-delivery-kit.values.toml`. Keep every stored date as it is; an upgrade never re-dates the process.
 3. **Render** the new kit into scratch, as in step 3.
 4. **Find local edits.** If this kit is a git checkout with a tag `v<installed>`, extract that version's `assets/` into scratch (`git -C <kit> archive v<installed> skills/bmad-delivery-kit | tar -x -C <scratch>/old`). Render it with the stored values, and diff the result against the project's three kit keys: those hunks are local edits. Without the old version, diff the project's keys against the new render. Treat every hunk the version notes do not explain as a possible local edit, and ask about it.
@@ -181,3 +188,13 @@ Then list the user's next steps:
 7. **Policy:** merge again as in step 6.
 8. **Verify** as in step 7. The header now carries the new version.
 9. **Report** as in step 9, and list the amendments the user must accept.
+
+### From 1.0.0 to 1.0.1
+
+1.0.1 adds the known escalation classes and the isolated in-build reviewer. The upgrade is a re-render plus a K-entry merge:
+- **New parameters:** `SINGLE_OPERATOR`, `EVIDENCE_DIR`, `REVIEWER_RECIPE`, `REVIEWER_FLAGS` and `PARK_EXAMPLE`. Infer them as in step 2, and add them to the values file. Change no stored value, and no stored date in particular.
+- **Override:** `refine_before` gains "Shared recipes" after "Wording", K1–K6 in Check 2's brief, and the single-operator line becomes the `SINGLE_OPERATOR` switch. `validate_after` makes a K FAIL block. `checks.ticket` gains a third entry, "Known escalation classes K1–K6", appended after the R1–R12 entry; the first two entries are unchanged from 1.0.0. Keep local edits as in step 4.
+- **Scope:** the K entry's scope already exempts approvals committed before it, so stories approved under 1.0.0 keep their standing; a later re-approval is covered.
+- **ADRs:** append to the delegation ADR `## Amendment <date>: known escalation classes`, status Proposed, holding §11 of the newly rendered ADR. Append to the checks ADR a one-line amendment: Check 2 also judges K1–K6, and the Ticket check gains a third item.
+- **Reviewer recipe and `.gitignore`:** as in step 5.
+- **Verify** as in step 7, including the K entry.

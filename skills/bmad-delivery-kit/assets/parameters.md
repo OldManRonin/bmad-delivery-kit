@@ -2,13 +2,13 @@
 
 Every `{{PLACEHOLDER}}` in the kit's templates, what it means, its default, an example, and where the installer looks for it. `scripts/render_templates.py` reads the defaults from the `toml` block under "Defaults" below; that block is their only home. The installer writes the project's values to `_bmad/custom/bmad-delivery-kit.values.toml` (strings only), which overrides the defaults and is kept for upgrades.
 
-Value syntax: `"@NAME"` copies another value, and `"@infer"` means the installer must supply a value; the render fails until it does, and also fails when such a value is blank. `"@today"` is allowed only for `RENDER_DATE`: every other date is stored as a literal `YYYY-MM-DD`, so an upgrade's re-render never moves a date the audit relies on. `{{NAME|cap}}` in a template capitalises the first letter. A template line holding only a placeholder whose value is empty is dropped.
+Value syntax: every value is a string; `SINGLE_OPERATOR` is `"true"` or `"false"`. `"@NAME"` copies another value, and `"@infer"` means the installer must supply a value; the render fails until it does, and also fails when such a value is blank. `"@today"` is allowed only for `RENDER_DATE`: every other date is stored as a literal `YYYY-MM-DD`, so an upgrade's re-render never moves a date the audit relies on. `{{NAME|cap}}` in a template capitalises the first letter. A template line holding only a placeholder whose value is empty is dropped.
 
 ## Identity and dates
 
 | Placeholder | Meaning | Default | Example | Infer from |
 |---|---|---|---|---|
-| `KIT_VERSION` | Kit version, written into the override's header comment. | set by the script | `1.0.0` | `render_templates.py version` |
+| `KIT_VERSION` | Kit version, written into the override's header comment. | set by the script | `1.0.1` | `render_templates.py version` |
 | `RENDER_DATE` | Date of this render. | `@today` | `2026-11-02` | clock |
 | `CHECKS_ADR` | Number of the fresh-context checks ADR. | `@infer` | `0014` | next free number in the ADR folder, zero-padded like its neighbours |
 | `DELEGATION_ADR` | Number of the delegated-approval ADR. | `@infer` | `0015` | `CHECKS_ADR` + 1 |
@@ -18,6 +18,7 @@ Value syntax: `"@NAME"` copies another value, and `"@infer"` means the installer
 | `PRODUCTION_GATES_DATE` | Approvals on or after it need a `Production-facing:` line. Literal date. | `@ADOPTION_DATE` | `2026-11-02` | same |
 | `ADOPTION_COMMIT` | The delivery-branch commit the adoption lands on; stop-rule lines in its history are exempt. | `@infer` | `4f1c2ab` | `git rev-parse --short <DELIVERY_BRANCH>` before the adoption commit |
 | `PRE_ADOPTION_APPROVALS` | Examples of approvals that predate the checks, inserted before a full stop as `, such as those of …` text. | `""` | `, such as those of 1.1 and 1.4` | approved stories in the memlogs; leave empty for a new project |
+| `SINGLE_OPERATOR` | `"true"`: nothing in the checks, fixes or tickets may need a second person. `"false"`: a check or fix may name a second reviewer role (a role, never a person). | `true` | `false` for a team with a lead who confirms plan verdicts | `AGENTS.md`, the team's size; ask if unclear |
 | `IN_FLIGHT_STORIES` | Stories mid-refinement at adoption that keep their logged runs, as `, such as …,` text. | `""` | `, such as 2.3,` | stories with check runs logged but not approved |
 
 ## Project shape
@@ -36,6 +37,7 @@ Value syntax: `"@NAME"` copies another value, and `"@infer"` means the installer
 | `HANDLES` | Names of those environments (plural noun; R9's label is this capitalised). | `environment handles` | `project handles` | local-environment docs |
 | `PROTECTED_PATHS` | What a checker must never open, as text after "or". | `` any file `AGENTS.md` places off limits, such as a credential or secrets file `` | `` anything under `.dev-env/secrets/` `` | `AGENTS.md` credential rules, `.gitignore`d secret folders |
 | `PROTECTED_RESOURCES` | What no story step may need (R9), besides a credential file. | `a shared, retained or production environment` | `a shared staging database` | `AGENTS.md` "never touch" rules |
+| `EVIDENCE_DIR` | The repository's git-ignored local evidence folder, relative to the root, no trailing slash. Reviewer hash records and probe files go here; a report here is not evidence for K3. | `@infer` | `.local-evidence` | `AGENTS.md`, `.gitignore`; if none exists, recommend `.local-evidence` and adding it to `.gitignore` |
 | `BANNED_HOST_TOOLS` | Tools no command may need (R8). | `` a tool that `AGENTS.md` bans `` | `` host `npm` or `python` `` | `AGENTS.md` "never run" rules |
 | `SESSION_TIMEOUT_MIN` | bmad-loop's session timeout, for R11 and the policy. | `@infer` | `180` | `[limits] session_timeout_min`; if unset, bmad-loop's own default (90 in 0.13.2) |
 | `SESSION_TIMEOUT_DATE` | The date that timeout was read. Literal date. | `@ADOPTION_DATE` | `2026-11-02` | the adoption date, written literally |
@@ -47,6 +49,7 @@ Value syntax: `"@NAME"` copies another value, and `"@infer"` means the installer
 | `GATES_LIST` | Every formal gate, for the reserved-area rule (approval condition 5). | `every release, security, compliance or sign-off gate the project's documents define` | `the release gate, the SOC 2 evidence gate and the pen-test sign-off` | `AGENTS.md` gate rules, PRD, delivery plan |
 | `GATES_SHORT` | The same, short, for R3's "nothing claims to pass …". | `a formal gate` | `the release gate or a SOC 2 control` | same |
 | `LEGAL_RULE_EXAMPLE` | A recorded legal rule whose exact implementation is not a legal matter, as `, such as …,` text. | `""` | `, such as ADR 0005,` | a licensing or data-policy ADR |
+| `PARK_EXAMPLE` | A real park commit to cite in K2, as ` (as in <story>'s park commit `<sha>`)` text with a leading space. | `""` | `` (as in 2.4's park commit `1a2b3c4`) `` | a committed `awaiting-operator` park, once one exists |
 | `PRODUCTION_CODE` | Shipped code, with its exceptions, after "code under". | `@infer` | `` `src/`, except in `fixtures/` or `test/` directories and in `*.test.*` files `` | layout, test conventions |
 | `PUBLISHED_CONTRACTS` | What counts as a published contract. | see Defaults | `the REST API's request, response and error shapes, the OpenAPI document and the webhook payloads` | API docs, OpenAPI files, SDKs |
 | `LOCAL_ONLY_SET` | What a local-only story may change. | see Defaults | `` local tooling (`scripts/`, `docker/dev/`), fixture code, tests, ADRs, documentation or planning files `` | layout |
@@ -63,6 +66,8 @@ Value syntax: `"@NAME"` copies another value, and `"@infer"` means the installer
 | `REVIEW_ADAPTER` | bmad-loop adapter for review, triage and retrospective sessions. | `@DEV_ADAPTER` | `claude` | `[adapter.review] name`; recommend a different vendor from dev |
 | `REVIEW_AGENT` | How the ADR names the reviewer. | `@REVIEW_ADAPTER` | `Claude Opus` | same |
 | `REVIEW_MODEL` | Model for those sessions; empty is the CLI default. | `""` | `opus` | `[adapter.review] model` |
+| `REVIEWER_RECIPE` | Where the in-build reviewer recipe lives, as `path#section`. The installer writes the recipe there if the file has no such section. | `docs/development/in-build-reviewer.md#Launching an in-build reviewer` | `docs/dev/local.md#Launching an in-build reviewer` | an existing section of that name |
+| `REVIEWER_FLAGS` | Model flags for an in-build reviewer, in the recipe's launch line. | `--model opus --effort xhigh` | `--model sonnet` | the model the team uses for independent review |
 | `VERIFY_COMMANDS` | `[verify] commands`, as a TOML array. | `@infer` | `["make test", "make lint"]` | `[verify] commands`, `AGENTS.md` test commands |
 | `ENV_PROBES` | `[environment] probes`, as a TOML array. Keep them project-independent. | `[]` | `["docker info --format {{.ServerVersion}}"]` wrapped as TOML | `[environment] probes` |
 | `BMAD_LOOP_VERSION` | The bmad-loop version the ADR's loop facts were checked against. | `@infer` | `0.13.2` | `bmad-loop --version` |
@@ -72,7 +77,7 @@ Note on `ENV_PROBES`: a value containing `{{` or `}}` (such as a Docker format s
 ## Defaults
 
 ```toml
-KIT_VERSION = "1.0.0"
+KIT_VERSION = "1.0.1"
 RENDER_DATE = "@today"
 CHECKS_ADR = "@infer"
 DELEGATION_ADR = "@infer"
@@ -82,6 +87,7 @@ DELEGATION_DATE = "@ADOPTION_DATE"
 PRODUCTION_GATES_DATE = "@ADOPTION_DATE"
 ADOPTION_COMMIT = "@infer"
 PRE_ADOPTION_APPROVALS = ""
+SINGLE_OPERATOR = "true"
 IN_FLIGHT_STORIES = ""
 PROJECT_NAME = "this project"
 DELIVERY_BRANCH = "@infer"
@@ -95,12 +101,14 @@ ENV_NOUN = "environment"
 HANDLES = "environment handles"
 PROTECTED_PATHS = "any file `AGENTS.md` places off limits, such as a credential or secrets file"
 PROTECTED_RESOURCES = "a shared, retained or production environment"
+EVIDENCE_DIR = "@infer"
 BANNED_HOST_TOOLS = "a tool that `AGENTS.md` bans"
 SESSION_TIMEOUT_MIN = "@infer"
 SESSION_TIMEOUT_DATE = "@ADOPTION_DATE"
 GATES_LIST = "every release, security, compliance or sign-off gate the project's documents define"
 GATES_SHORT = "a formal gate"
 LEGAL_RULE_EXAMPLE = ""
+PARK_EXAMPLE = ""
 PRODUCTION_CODE = "@infer"
 PUBLISHED_CONTRACTS = "an endpoint's request, response or error shape, an API description document, a generated client, a CLI's commands and output, or an agent tool"
 LOCAL_ONLY_SET = "local tooling, test fixtures, tests, ADRs, documentation or planning files"
@@ -112,6 +120,8 @@ DEV_AGENT = "@DEV_ADAPTER"
 REVIEW_ADAPTER = "@DEV_ADAPTER"
 REVIEW_AGENT = "@REVIEW_ADAPTER"
 REVIEW_MODEL = ""
+REVIEWER_RECIPE = "docs/development/in-build-reviewer.md#Launching an in-build reviewer"
+REVIEWER_FLAGS = "--model opus --effort xhigh"
 VERIFY_COMMANDS = "@infer"
 ENV_PROBES = "[]"
 BMAD_LOOP_VERSION = "@infer"

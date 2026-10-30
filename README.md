@@ -15,6 +15,7 @@ This kit tackles both.
 - **It lets routine work go ahead without waiting for you.** You set the rules once, in a decision record that you read and accept. After that, a coordinating agent may approve a story itself, but only when its checks came back clean and the work is local and low-stakes: nothing deployed, no money spent, no legal question, no real passwords or keys. Everything else still comes to you, gathered into one checklist, with a recommended answer for every question.
 - **Anything that ships to real users always gets your eyes.** You approve the story, read the builder's plan before it starts, and walk through the result before it counts as done.
 - **It keeps a paper trail.** Every check, fix and approval is logged against a fingerprint of the exact text that was approved. If the text changes afterwards, the approval no longer counts.
+- **It learns from every build stop.** It turns each past kind of build stop into a check, such as a reviewer launched unsafely or a claim about existing output that the code contradicts, and hold back a story that would hit one, both before it is approved and again before it is built.
 - **It knows when to stop.** If a story keeps failing its checks, the kit stops patching it after three rounds and has it rewritten or split into smaller stories.
 - **Its rules come from real failures.** Each rule traces back to something that went wrong while running this process on a production project; `references/lessons.md` lists them.
 
@@ -22,7 +23,7 @@ To use it, you copy the skill into your project and ask your coding agent to "in
 
 It is for teams and solo developers who already use the BMad Method (v7) with its bmad-loop runner, and who want AI agents to deliver many stories with less waiting and fewer misread stories.
 
-**Status:** v1.0.0. Extracted from one production BMad project and tested there on bmad-loop 0.13.2. Everything specific to that project is an install-time parameter or was removed.
+**Status:** v1.0.1. Extracted from one production BMad project and tested there on bmad-loop 0.13.2. Everything specific to that project is an install-time parameter or was removed.
 
 ## What the process does, in detail
 
@@ -32,7 +33,9 @@ It is for teams and solo developers who already use the BMad Method (v7) with it
 - **Delegated approval.** Once you accept the delegation ADR, a coordinator session approves clean, local, gate-free stories in your place under eight conditions. Everything else comes to you, batched on an operator checklist.
 - **Operator actions.** Human steps park a story at `awaiting-operator` instead of halting the loop.
 - **Human gates for production.** For a story that ships, you approve its refinement, read the builder's plan before the build, and walk through the commit before the story counts as done.
-- **A second pass.** After approval, R1–R12 run again, and the findings are sorted without editing the approved text.
+- **A second pass.** After approval, R1–R12 and K1–K6 run again, and the findings are sorted without editing the approved text.
+- **Known build stops.** Each past kind of build stop is now a check, such as an unsafe reviewer launch, a park described wrongly, an exact claim the code contradicts, an input too large for its session, an unpinned bmad-loop behavior or a stale ADR. A story that would hit one is held before it is approved, and again before it is built.
+- **Isolated in-build reviewers.** When a build starts its own reviewer, the reviewer sees only copies of its inputs, has no shell, and is audited from its log, not its own words. A probe proves the setup on each Claude Code version.
 
 `skills/bmad-delivery-kit/references/process.md` explains it all in plain words.
 
@@ -42,7 +45,7 @@ It is for teams and solo developers who already use the BMad Method (v7) with it
 - **bmad-loop**, installed and initialised: `bmad-loop --version` works and `.bmad-loop/policy.toml` exists. The kit was tested on 0.13.2. Its notes on bmad-loop behaviour should be rechecked on other versions.
 - **uv** (BMad's renderer runs through it) and **Python 3.11+**. The kit's own script uses only the standard library.
 - A coding agent that can run skills and start fresh subagents, such as Claude Code. Other harnesses work if you give the installer a one-sentence way to start a brand-new, non-fork subagent.
-- Recommended: the `bmad-walkthrough` skill, which done reviews use.
+- Recommended: the `bmad-walkthrough` skill, which done reviews use; and `claude` (Claude Code) with `tmux`, for stories whose builds launch an in-build reviewer.
 
 The skill checks all of this first, and refuses with install instructions if something is missing.
 
@@ -62,7 +65,7 @@ The skill checks all of this first, and refuses with install instructions if som
    2. infers parameters from `AGENTS.md`, `CLAUDE.md`, the ADR folder, the policy and the repository layout, and asks you only for what it cannot infer, each question with a recommended answer;
    3. renders the templates;
    4. merges Sofia's override through `bmad-customize`, keeping your existing entries;
-   5. writes two ADRs at the next free numbers, as Proposed;
+   5. writes two ADRs at the next free numbers, as Proposed, and the in-build reviewer recipe;
    6. merges the bmad-loop policy keys;
    7. verifies: the TOML parses, Sofia renders with the override, and `bmad-loop validate` passes apart from the expected dirty-worktree line;
    8. records the kit version in the override's header;
@@ -70,17 +73,19 @@ The skill checks all of this first, and refuses with install instructions if som
 
    It shows a diff and waits for your yes before every write. It commits nothing.
 4. Read both ADRs and accept them. Until the delegation ADR is Accepted, every approval stays with you.
-5. Commit the override, the values file and the ADRs.
+5. Commit the override, the values file, the ADRs, the reviewer recipe and `.gitignore`.
 6. Start the coordinator with the `/loop` prompt in `references/coordinator.md`.
 
 ### What it writes
 
 | In your project | Content |
 |---|---|
-| `_bmad/custom/bmad-agent-po.toml` | Sofia's team override: `workflow.refine_before`, two `workflow.checks.ticket` entries and `workflow.validate_after`, with a kit-version header. |
+| `_bmad/custom/bmad-agent-po.toml` | Sofia's team override: `workflow.refine_before`, three `workflow.checks.ticket` entries (the record audit, R1–R12, K1–K6) and `workflow.validate_after`, with a kit-version header. |
 | `_bmad/custom/bmad-delivery-kit.values.toml` | The parameter values, kept for upgrades. |
 | Two ADRs | "Gate story approval on fresh-context checks" and "Delegated story approval and standing loop authority". Both are Proposed. |
 | `.bmad-loop/policy.toml` | `mark_done`, `thorough_review`, `[review]`, `[operator]`, `[sweep]`, `[verify]`, `[environment]` probes and the dev/review adapters. This file is machine-local. |
+| The in-build reviewer recipe | Written by default to `docs/development/in-build-reviewer.md`, with an empty probe record, unless the project already has that section. |
+| `.gitignore` | The local evidence folder, if it is not ignored yet. |
 
 It edits no installed skill, pushes nothing, and runs no hosted step.
 
@@ -102,10 +107,10 @@ skills/bmad-delivery-kit/
   SKILL.md                                  the install and upgrade procedure the agent follows
   references/process.md                     the process in plain words
   references/lessons.md                     the lessons behind the rules
-  references/coordinator.md                 the /loop prompt, the operator checklist, the in-build reviewer recipe, plan leg and done review
+  references/coordinator.md                 the /loop prompt, the operator checklist, the in-build reviewer recipe (with its judging program and probe), plan leg and done review
   assets/bmad-agent-po.override.toml.tmpl   Sofia's override, with {{PLACEHOLDERS}}
   assets/adr-fresh-context-checks.md.tmpl   ADR: the checks
-  assets/adr-delegated-approval.md.tmpl     ADR: delegation, tiers, third run, production gates, second pass, re-check rules, standing authority
+  assets/adr-delegated-approval.md.tmpl     ADR: delegation, tiers, third run, production gates, second pass, re-check rules, standing authority, known escalation classes
   assets/bmad-loop-policy.snippet.toml      the policy keys, commented
   assets/parameters.md                      every placeholder (meaning, default, example) and the single defaults block
   scripts/render_templates.py               renders the templates from a values file
@@ -131,7 +136,9 @@ skills/bmad-delivery-kit/
 | Scoped re-runs, sweep, wording, what blocks, declined suggestions, stop | Six re-check rules from a BMad maintainer, after a story's GAP count grew with every round (§8) |
 | Standing authority to take recommended options | The operator's standing instruction, after per-decision questions stalled the loop (§9) |
 | Fresh review of park and sweep commits; sweep-written ADRs stay Proposed | Lessons: parks skip the review session, and a sweep shipped a fail-open check (`lessons.md` 16, 17) |
-| In-build reviewer: detached tmux, PID file, deny rules, `--setting-sources project,local` | Lessons 9–11: a reviewer read the builder's plan, a hook broke allow rules, and a child reviewer died with its shell |
+| In-build reviewer: a package folder outside the repository, `--restricted --safe-mode --tools Read,Write`, a stream-json audit that fails closed, a version-pinned probe, detached tmux with a PID file | Lessons 9–11 and 32–34: a reviewer read the builder's plan, a hook broke allow rules, a child reviewer died with its shell, read-only shell commands were auto-approved, deny lists left read routes open, and a working directory inside the repository leaked the git status snapshot |
+| Known escalation classes K1–K6; shared recipes cited by section | The production project's review of its build stops: each class of stop became a check (lesson 37) |
+| `SINGLE_OPERATOR` switch | The production project had one operator; teams can allow a second reviewer role |
 | Policy keys (`mark_done`, `thorough_review`, `trigger = "always"`, `[operator]`, `[sweep] auto = "never"`, project-independent probes, separate review vendor) | The production project's bmad-loop policy, and lessons 16, 18 and 28 |
 
 ## Credits
@@ -145,6 +152,7 @@ skills/bmad-delivery-kit/
 
 ## Versions
 
+- **1.0.1**: adds the known escalation classes K1–K6, as a third `checks.ticket` entry run in Check 2 and again before the build (a K FAIL blocks), the "Shared recipes" drafting rule, and the isolated in-build reviewer: recipe, judging program and probe, rendered into the project. The delegation ADR gains §11; §1–§10 keep their numbers. New parameters: `SINGLE_OPERATOR`, `EVIDENCE_DIR`, `REVIEWER_RECIPE`, `REVIEWER_FLAGS`, `PARK_EXAMPLE`. Upgrading from 1.0.0 is a re-render plus a K-entry merge, with Proposed ADR amendments; no stored date moves. New lessons 32–37.
 - **1.0.0**: the first extraction. The rules are the production project's checks ADR and delegation ADR, with all four of the latter's amendments folded in: the third run, production-facing gates, R1–R12 and the re-check rules.
 
 ## License

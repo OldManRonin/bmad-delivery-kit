@@ -4,8 +4,9 @@
 Standard library only, Python 3.11+. The defaults live in one place: the ```toml block
 under "## Defaults" in assets/parameters.md. A values file overrides them.
 
-  render_templates.py render --values V.toml --out DIR     render all four templates into DIR
+  render_templates.py render --values V.toml --out DIR     render all five outputs into DIR
   render_templates.py check-override FILE                   parse an override and check the kit keys
+  render_templates.py installed-version FILE                print the kit version an override's header records
   render_templates.py placeholders                          list every placeholder the templates use
   render_templates.py version                               print the kit version
 
@@ -16,6 +17,9 @@ resolves blank, is an error: the installer must supply it. VERIFY_COMMANDS must 
 non-empty TOML array of strings. Every placeholder must have a value, no rendered file may
 keep a `{{` or `}}`, and the rendered override and policy snippet must parse with tomllib.
 A template line that holds only a placeholder whose value is empty is dropped.
+`{{#if NAME}}...{{else}}...{{/if}}` keeps one branch; NAME must be "true" or "false".
+The in-build reviewer recipe is rendered from the section of references/coordinator.md
+between its `reviewer-recipe` markers, so the recipe has one home.
 """
 
 from __future__ import annotations
@@ -27,7 +31,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-KIT_VERSION = "1.0.0"
+KIT_VERSION = "1.0.1"
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 ASSETS = SKILL_DIR / "assets"
@@ -36,19 +40,41 @@ TEMPLATES = {
     "adr-fresh-context-checks.md": ASSETS / "adr-fresh-context-checks.md.tmpl",
     "adr-delegated-approval.md": ASSETS / "adr-delegated-approval.md.tmpl",
     "bmad-loop-policy.snippet.toml": ASSETS / "bmad-loop-policy.snippet.toml",
+    "in-build-reviewer.md": SKILL_DIR / "references" / "coordinator.md",
 }
+RECIPE = re.compile(r"<!-- reviewer-recipe:start -->\n(.*?)<!-- reviewer-recipe:end -->\n", re.S)
+CONDITIONAL = re.compile(r"\{\{#if ([A-Z][A-Z0-9_]*)\}\}(.*?)(?:\{\{else\}\}(.*?))?\{\{/if\}\}", re.S)
+BOOL_KEYS = {"SINGLE_OPERATOR"}
 PLACEHOLDER = re.compile(r"\{\{([A-Z][A-Z0-9_]*)(\|cap)?\}\}")
 LONE_PLACEHOLDER = re.compile(r"^\{\{([A-Z][A-Z0-9_]*)\}\}\n", re.M)
 ANY_BRACES = re.compile(r"\{\{|\}\}")
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 DATE_KEYS = {"ADOPTION_DATE", "CHECKS_DATE", "DELEGATION_DATE", "PRODUCTION_GATES_DATE", "SESSION_TIMEOUT_DATE", "RENDER_DATE"}
 KIT_KEYS = ("refine_before", "validate_after")
-KIT_CHECK_TITLES = ("Pre-approval checks recorded", "Readiness items R1–R12")
+KIT_CHECK_TITLES = ("Pre-approval checks recorded", "Readiness items R1–R12", "Known escalation classes K1–K6")
 AUTO = {"KIT_VERSION", "RENDER_DATE"}
 
 
 class KitError(Exception):
     pass
+
+
+def template_text(name: str) -> str:
+    text = TEMPLATES[name].read_text(encoding="utf-8")
+    if name != "in-build-reviewer.md":
+        return text
+    match = RECIPE.search(text)
+    if not match:
+        raise KitError("references/coordinator.md has no reviewer-recipe section")
+    return (
+        "# In-build reviewer\n\n"
+        "<!-- Written by bmad-delivery-kit {{KIT_VERSION}} on {{RENDER_DATE}}; the recipe's home is the kit's references/coordinator.md."
+        " Add probe rows here; change the rest through the kit. -->\n\n" + match.group(1)
+    )
+
+
+def names_in(text: str) -> set[str]:
+    return {m.group(1) for m in PLACEHOLDER.finditer(text)} | {m.group(1) for m in CONDITIONAL.finditer(text)}
 
 
 def load_defaults() -> dict[str, str]:
@@ -105,6 +131,9 @@ def validate_values(values: dict[str, str], defaults: dict[str, str]) -> None:
     blank = sorted(key for key, default in defaults.items() if default == "@infer" and not values[key].strip())
     if blank:
         raise KitError(f"blank value for a required parameter: {', '.join(blank)}")
+    for key in sorted(BOOL_KEYS & set(values)):
+        if values[key] not in ("true", "false"):
+            raise KitError(f"{key} must be \"true\" or \"false\", got {values[key]!r}")
     for key in sorted(DATE_KEYS & set(values)):
         if not DATE.fullmatch(values[key]):
             raise KitError(f"{key} must be a literal YYYY-MM-DD date, got {values[key]!r}")
@@ -117,9 +146,15 @@ def validate_values(values: dict[str, str], defaults: dict[str, str]) -> None:
 
 
 def render_text(text: str, values: dict[str, str], label: str) -> str:
-    missing = sorted({m.group(1) for m in PLACEHOLDER.finditer(text) if m.group(1) not in values})
+    missing = sorted(name for name in names_in(text) if name not in values)
     if missing:
         raise KitError(f"{label}: no value for {', '.join(missing)}")
+    def branch(m: re.Match) -> str:
+        if values[m.group(1)] not in ("true", "false"):
+            raise KitError(f"{label}: {{{{#if {m.group(1)}}}}} needs \"true\" or \"false\"")
+        return m.group(2) if values[m.group(1)] == "true" else (m.group(3) or "")
+
+    text = CONDITIONAL.sub(branch, text)
     # A line that is only a placeholder with an empty value disappears with its newline.
     text = LONE_PLACEHOLDER.sub(lambda m: "" if values[m.group(1)] == "" else m.group(0), text)
 
@@ -172,9 +207,9 @@ def cmd_render(args: argparse.Namespace) -> None:
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     used: set[str] = set()
-    for name, path in TEMPLATES.items():
-        text = path.read_text(encoding="utf-8")
-        used |= {m.group(1) for m in PLACEHOLDER.finditer(text)}
+    for name in TEMPLATES:
+        text = template_text(name)
+        used |= names_in(text)
         if name.endswith(".toml"):
             bad = sorted({m.group(1) for m in PLACEHOLDER.finditer(text) if "'''" in values.get(m.group(1), "")})
             if bad:
@@ -194,6 +229,14 @@ def cmd_render(args: argparse.Namespace) -> None:
         print(f"note: parameters no template uses (coordinator.md only): {', '.join(unused)}")
 
 
+def cmd_installed_version(args: argparse.Namespace) -> None:
+    text = Path(args.file).read_text(encoding="utf-8")
+    match = re.search(r"^# bmad-delivery-kit (\S+), rendered (\S+);", text, re.M)
+    if not match:
+        raise KitError(f"{args.file}: no '# bmad-delivery-kit <version>, rendered <date>;' header comment")
+    print(match.group(1))
+
+
 def cmd_check_override(args: argparse.Namespace) -> None:
     info = check_override_text(Path(args.file).read_text(encoding="utf-8"), args.file)
     print(f"ok: parses; kit keys present; kit {info['kit_version']} rendered {info['rendered']}")
@@ -201,9 +244,9 @@ def cmd_check_override(args: argparse.Namespace) -> None:
 
 def cmd_placeholders(_: argparse.Namespace) -> None:
     names: dict[str, set[str]] = {}
-    for name, path in TEMPLATES.items():
-        for m in PLACEHOLDER.finditer(path.read_text(encoding="utf-8")):
-            names.setdefault(m.group(1), set()).add(name)
+    for name in TEMPLATES:
+        for key in names_in(template_text(name)):
+            names.setdefault(key, set()).add(name)
     defaults = load_defaults()
     for key in sorted(names):
         flag = "" if key in defaults or key in AUTO else "  <-- no default in parameters.md"
@@ -220,6 +263,9 @@ def main() -> int:
     p.add_argument("--out", required=True)
     p.add_argument("--today", help="override the render date (YYYY-MM-DD)")
     p.set_defaults(func=cmd_render)
+    p = sub.add_parser("installed-version")
+    p.add_argument("file")
+    p.set_defaults(func=cmd_installed_version)
     p = sub.add_parser("check-override")
     p.add_argument("file")
     p.set_defaults(func=cmd_check_override)

@@ -21,7 +21,7 @@ The idea comes from Google's Elephant-Goldfish Model: an author who holds all th
 2. **Check 1, explain-back,** and **Check 2, readiness,** run in two separate brand-new subagents.
 3. Sofia logs the results, fixes the text, and re-runs within the story's budget.
 4. Approval: by the user, or by the coordinator when all eight conditions hold.
-5. The **Ticket check** runs once more after approval: it audits the records and runs R1–R12 a second time.
+5. The **Ticket check** runs once more after approval: it audits the records and runs R1–R12 and K1–K6 a second time.
 6. The approval is committed by pathspec.
 7. A **production-facing** story gets a plan leg first: the builder writes its plan, and the user reads it before anything is built.
 8. bmad-loop builds the story, runs `[verify]`, runs the review session, and commits.
@@ -58,6 +58,19 @@ A second fresh checker, with the same reading list plus read-only search, judges
 
 The twelve items live in one place, a `checks.ticket` entry. Check 2 copies them from there, so the pre-approval and post-approval passes cannot drift apart.
 
+## Known escalation classes (K1–K6)
+
+Some build stops come from what a story assumes about the tools or about existing outputs, which no reading of the text alone catches. Each class of stop seen so far is now a check, run in Check 2 after R12 and again before the build:
+
+- **K1 Reviewer launch:** an in-build reviewer is launched by the shared recipe, cited by section, and the recipe's probe has passed for the installed Claude Code.
+- **K2 Parks:** a park is described the way bmad-loop commits it.
+- **K3 Exact claims:** every exact list of keys, fields, lines or counts in an existing output matches the code that produces it, or a committed report.
+- **K4 Input size:** every reviewer or agent the story starts has a byte budget that fits its context, and a time limit that fits the session.
+- **K5 bmad-loop version:** every bmad-loop behavior the story relies on names the version it was checked on, and that is the installed one.
+- **K6 Current ADRs:** nothing the story relies on is superseded or contradicted by a later decision.
+
+A story that does not touch a class passes that item as not applicable, with the reason. A K FAIL blocks like a readiness FAIL. Stories cite shared recipes, such as the reviewer launcher, by `path#section` and never restate their commands, so a fix to a recipe reaches every story at once.
+
 ## What blocks
 
 Blocking: a DIVERGE; a readiness FAIL or NO-GO; INCOMPLETE; a missing prerequisite; a contradiction; a GAP where the reader's own choice could change what is built or how it is verified; a GAP on what to make true or on the wrong build; and on a high-risk story, any decision left to the builder.
@@ -80,13 +93,21 @@ Any other fix touches a requirement and goes to the user. A label the user did n
 
 - **Scope:** a re-run re-asks the per-criterion questions only for criteria a fix touched or that were not yet clean. The reader still sees the whole story. Readiness always judges the whole story.
 - **Sweep:** before any re-run, look for the same kind of gap across the whole story, not just the flagged line. Fixing by class is what makes stories converge.
-- **Wording:** short sentences, project vocabulary, every term defined or already in use, no text the build or its verification does not need.
+- **Wording:** short sentences, project vocabulary, every term defined or already in use, no text the build or its verification does not need. A shared recipe is cited, not restated.
 - **Declined suggestions** are dated decision lines in the memlog, never edits to the story, and are not raised again without new evidence.
 - **Stop:** if a third explain-back run still blocks, stop fixing. Rewrite the story once; if the rewrite's third run also blocks, re-slice it. A re-sliced story that hits the stop goes to the user.
+
+## People
+
+By default the process assumes one operator: nothing in a check, a fix or a ticket may need a second person (`SINGLE_OPERATOR = "true"`). A team can set it to `"false"`; then a check or fix may name a second reviewer role, never a person.
 
 ## Delegated approval
 
 The coordinator may approve in the user's place only when all eight hold: no DIVERGE; every blocking finding fixed and readiness GO on the exact final text (hashes prove it); nothing waiting on the user; not `hitl`; nothing in a reserved area (gates, hosted work, spend, legal matters, real credentials); an approved risk tier; execution authorized; and not production-facing. It then makes two bookkeeping edits, logs one decision line with the hashes, runs the Ticket check in a fresh subagent, and commits by pathspec only if that check is clean. Otherwise it withdraws the approval and asks the user. It never changes risk or hitl, never edits results, never marks a gate passed, never pushes.
+
+## In-build reviewers
+
+When a story's build starts its own fresh reviewer, the reviewer is isolated rather than fenced. Its inputs are copied into a package folder outside the repository, it runs restricted and in safe mode with only Read and Write, and compliance is judged from its stream-json log by a program that fails closed. A probe proves the setup on each Claude Code version. `coordinator.md` holds the recipe, and the installer writes it into the project.
 
 ## Operator actions
 
@@ -105,7 +126,7 @@ bmad-loop's own `plan_checkpoint` halts before a refined ticket's plan exists, a
 
 ## The second pass and its triage
 
-After approval, the Ticket check runs R1–R12 again. Because approval is pinned to the story's hash, its findings are sorted without editing the story: a **fix** withdraws the approval and sends the story back through the fix rules; a **suggestion** goes to the coordinator, is logged, and does not block; an **ask** goes to the user only for operator actions, hosted runs, gates, spend, legal matters, credentials, or a finding with no defensible recommendation. Any R-item FAIL blocks the build. A story withdrawn twice goes to the user.
+After approval, the Ticket check runs R1–R12 and K1–K6 again. Because approval is pinned to the story's hash, its findings are sorted without editing the story: a **fix** withdraws the approval and sends the story back through the fix rules; a **suggestion** goes to the coordinator, is logged, and does not block; an **ask** goes to the user only for operator actions, hosted runs, gates, spend, legal matters, credentials, or a finding with no defensible recommendation. Any R-item FAIL blocks the build. A story withdrawn twice goes to the user.
 
 ## Standing authority
 
@@ -129,7 +150,8 @@ Everything lands in the epic's `.memlog.md` through `_bmad/scripts/memlog.py app
 | Rule | Home |
 |---|---|
 | Checks, briefs, what blocks, scoped re-runs, sweep, stop, tiers, delegated approval, production-facing test | override `workflow.refine_before` |
-| Record audit; R1–R12 | override `workflow.checks.ticket` |
+| Record audit; R1–R12; K1–K6 | override `workflow.checks.ticket` |
 | Second-pass triage | override `workflow.validate_after` |
 | Operator actions, standing commits, plan leg, done review, epic walkthrough, standing authority | ADR D (coordinator rules) and `references/coordinator.md` |
+| The in-build reviewer launcher, its judging program and probe | `references/coordinator.md`, rendered into the project at `REVIEWER_RECIPE` |
 | Loop settings | `.bmad-loop/policy.toml` (machine-local) |

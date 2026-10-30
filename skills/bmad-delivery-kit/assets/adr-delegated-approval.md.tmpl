@@ -4,7 +4,7 @@
 - **Amends:** [ADR {{CHECKS_ADR}}]({{CHECKS_ADR}}-gate-story-approval-on-fresh-context-checks.md).
 - **Date:** {{ADOPTION_DATE}}
 
-Below, "the override" is `_bmad/custom/bmad-agent-po.toml`, "the coordinator" is the {{COORDINATOR_AGENT}} that runs the delivery loop, and "the user" is the project's operator. §1–§4 set up delegation. §5–§8 began as amendments in the production project this process was extracted from; here they are sections. §9 is the standing authority, and §10 lists what does not change.
+Below, "the override" is `_bmad/custom/bmad-agent-po.toml`, "the coordinator" is the {{COORDINATOR_AGENT}} that runs the delivery loop, and "the user" is the project's operator. §1–§4 set up delegation. §5–§8 began as amendments in the production project this process was extracted from; here they are sections. §9 is the standing authority, §10 lists what does not change, and §11 (added in kit 1.0.1) is the known escalation classes.
 
 ## Context
 
@@ -145,7 +145,7 @@ A clean check run is one sample. A confident misreading passes a fresh-context c
 - A production-facing `hitl` story keeps both flags; bmad-loop halts at `hitl` first, so the user builds it in an attended session that leaves a plan MATCH line with the plan's SHA-256 before implementation, and a `done review <ref>: accepted` line after a walkthrough. Part D's hold applies from its commit until that acceptance.
 - The coordinator commits by pathspec: plan files and their removal, its plan-reading line, the user's plan-verdict line, the `mark_done` switch lines, the done-review line, and the `tickets.py mark … done` edit. Each is committed before the next run starts or resumes; otherwise bmad-loop's dirty-initiative gate pauses that run at `ticket-tree`.
 
-**bmad-loop facts this relies on** (bmad-loop {{BMAD_LOOP_VERSION}}; recheck on every bmad-loop upgrade):
+**bmad-loop facts this relies on** (checked on bmad-loop 0.13.2; this project runs {{BMAD_LOOP_VERSION}}; recheck them on any other version and on every bmad-loop upgrade):
 1. `plan_checkpoint` and `done_checkpoint` are entry fields that `tickets.py` reads from the entry.
 2. For a refined ticket, `plan_checkpoint` halts *before dispatch* to approve the story file; no builder's plan exists yet. The two-leg plan halt applies only to unrefined tickets.
 3. A dispatched ticket with an existing plan at `ready-for-dev` is built as that plan says.
@@ -172,7 +172,7 @@ A clean check run is one sample. A confident misreading passes a fresh-context c
 
 ### 7. R1–R12 in the Ticket check: a second pass
 
-The readiness items live in one place: the `workflow.checks.ticket` entry "Readiness items R1–R12", beside the record audit. Both R1 lines stay; the checker applies the one for the story's tier, and a medium or low label without the user's approval on or after {{DELEGATION_DATE}} counts as high. Each item needs evidence (`path#section` or a grep hit), and the story passes only if all twelve pass. Check 2's brief copies the items from that entry and keeps no copy of its own, so the two cannot drift.
+The readiness items live in one place: the `workflow.checks.ticket` entry "Readiness items R1–R12", beside the record audit. Both R1 lines stay; the checker applies the one for the story's tier, and a medium or low label without the user's approval on or after {{DELEGATION_DATE}} counts as high. Each item needs evidence (`path#section` or a grep hit), and the story passes only if all twelve pass. Check 2's brief copies the items from that entry and keeps no copy of its own, so the two cannot drift. It also takes K1–K6, after R12, from a third entry (§11).
 
 The post-approval Ticket check is Validate's Ticket section run by a fresh agent, so it runs R1–R12 a second time after the GO. The entry's scope is a story with `refined: true` whose build has not started (`backlog`), approved after the entry was committed. It judges from what the builder reads; the `.memlog.md` is not evidence for these items. This pass is not a readiness run: it is logged as a Ticket check line and never stands in for Check 2. Nothing is dropped as already covered by a built-in Ticket bullet: each R item is wider, and Check 2 runs the items without those bullets.
 
@@ -188,7 +188,7 @@ Each fresh reader finds new GAPs of little consequence, and re-reading every cri
 
 1. **Scoped re-runs** (Check 1, "Scoped re-run"). An explain-back re-run after fixes covers each criterion a fix line since the last run changed (including through text outside the criteria that the criterion relies on), each criterion that uses a term a fix defined or changed, and each criterion whose prior marks were not all MATCH or ALLOWED. Each fix line names the criteria it brings into scope, or none. The reader still gets the whole story and answers items 1, 3 and 4 story-wide. Doubt means a full run, and the first run after a rewrite or re-slice is full. Readiness always judges the whole story, which keeps contradictions (R10) and the high-risk R1 checked across the text.
 2. **Sweep** ("Findings, runs and the record"). Before any re-run, check the whole story for gaps of the same kind as each finding, and fix them as their own logged lines, "proactive, same class as <finding>". Fixing by class rather than by instance is what made stories converge.
-3. **Wording** ("Wording"). Short sentences in the project's vocabulary; every term defined or already in use; cut text that neither the build nor its verification needs. Between runs, text changes only through logged fixes.
+3. **Wording** ("Wording"). Short sentences in the project's vocabulary; every term defined or already in use; cut text that neither the build nor its verification needs. Between runs, text changes only through logged fixes. A shared recipe is cited by section, never restated (§11).
 4. **What blocks** (Check 1, "What blocks"; `validate_after`). A DIVERGE, a readiness FAIL, a missing prerequisite, a contradiction, a GAP where the reader's choice could change what is built or how it is verified, a GAP on what to make true or the wrong build, and on a high-risk story any decision left to the builder. Every other GAP is a suggestion only when its memlog line says so with a reason; doubt means it blocks.
 5. **Declined suggestions.** A declined suggestion is a dated `--type decision` line in the epic's memlog, by the coordinator under §9 or by the user. It counts as a declining `Decision:` for Validate's no-re-raise rule; a later repeat is logged as declined unless new evidence changes its basis. It is not written into the story, because that edit would void the GO.
 6. **Stop.** When an explain-back run that is the story's third or later still has a blocking finding, no fix round follows. Sofia rewrites the story once (new text; a rewrite touching scope goes to the user; logged as `rewrite (re-check rules)`; runs count from 1 again, starting with a full run). If the rewrite's third run also blocks, she re-slices it through Validate's Set and Dependencies sections (logged as `re-slice (re-check rules)`); the coordinator may make a re-slice under §9 unless it changes scope or Requirements coverage. A re-sliced story that reaches the stop goes to the user. This caps the coordinator's authority to authorize more runs; a dated user decision for a specific story still overrides it.
@@ -210,7 +210,44 @@ It still asks the user, batched on the operator checklist with one notification,
 - No agent opens credential files except through the scripts that own them (`AGENTS.md`).
 - The checks run in attended refinement only, never inside bmad-loop's unattended build sessions.
 
-The rules for Sofia live in the override: §1, §4–§6 A–B and §8 in `workflow.refine_before`; the audit and R1–R12 in `workflow.checks.ticket`; §7's triage in `workflow.validate_after`. §2, §3, §6 C–E and §9 are coordinator rules recorded only here.
+The rules for Sofia live in the override: §1, §4–§6 A–B, §8 and §11's drafting rule in `workflow.refine_before`; the audit, R1–R12 and K1–K6 in `workflow.checks.ticket`; the triage of §7 and §11 in `workflow.validate_after`. §11's reviewer launcher lives at `{{REVIEWER_RECIPE}}`. §2, §3, §6 C–E and §9 are coordinator rules recorded only here.
+
+### 11. Known escalation classes
+
+The checks judge a story's text. Several build stops came instead from what that text assumed about the tools or about existing outputs, which a reader of the text alone does not see:
+
+- **Reviewer launch.** In-build reviewers launched by each story's own recipe died with the shell that started them, read a plan they were told not to read, or were refused the commands they needed because a user-level command-rewriting hook defeated exact allow rules. Claude Code auto-approves read-only shell commands, such as `git status`, which `--permission-mode dontAsk` does not refuse. Each fix went into one story's criterion and was copied into the next by hand, as a longer deny list.
+- **Exact claims about existing outputs.** Stories listed the exact keys or fields of an existing output, and the producing code disagreed.
+
+A review of the stops and their fixes named four more classes that a check on the text can catch once it looks for them: parks described differently from how bmad-loop commits them, reviewer or agent inputs too large for the session, bmad-loop behavior assumed without the version it was checked on, and ADR passages that a later decision made stale.
+
+A check on the text cannot catch a surprise in tool behavior; only a recipe probed against the installed tools can. A deny list cannot be that recipe: it is a blocklist, and it leaves read routes open (`sed -n p` reads a plan, `echo */*` lists folders, a bare `Read` can open a credential file). A restricted reviewer whose working directory is inside the repository still gets Claude Code's git status snapshot (branch, changed files, recent commits) in its starting context; from a folder outside the repository, with `--safe-mode`, it gets no git status, `CLAUDE.md`, `AGENTS.md` or memory.
+
+**1. One shared, probe-tested reviewer launcher,** at `{{REVIEWER_RECIPE}}`. The reviewer is isolated, not fenced by a deny list:
+- **Package.** The build session copies the reviewer's inputs, as real files, into a fresh `mktemp -d` folder outside the repository (mode 700), checks each copy's SHA-256 against its original, and hashes the copies again after the reviewer exits; a difference is a stop. The package holds only the inputs, so credential files are never in it.
+- **Launch.** From inside that folder, in a detached tmux session with a pid file, as `claude -p --safe-mode --restricted --strict-mcp-config --tools Read,Write --permission-mode dontAsk --allowedTools 'Edit(./<output>)' --output-format stream-json --verbose`, under `env -u` for bmad-loop's run variables, with standard error kept out of the log. Before launch, `claude --version` must match a pass row of the probe record.
+- **Compliance** is judged from the stream-json log, never from the reviewer's words, by a program that fails closed: every line parses; the init event's `tools` are exactly Read and Write, its `cwd` is the package (with symlinks resolved), its `additional_directories` is empty or only the package, its `permissionMode` is `dontAsk` and its version matches the pass row; every tool call is a Read inside the package or a Write to the output; the last event is a successful `result`; and a call counts as refused only when a `permission_denied` event names it.
+- **Probe and probe record.** A fixed prompt, the same command with a fast model, and the program's expected lines. One row per run; each row records the Claude Code version and the recipe's kit version, and a pass counts only for both, so a Claude Code update or a new recipe version needs a new run before the next build that launches a reviewer.
+
+**2. K1–K6.** A third `workflow.checks.ticket` entry, "Known escalation classes K1–K6", beside the record audit and R1–R12, each item backed by evidence:
+- **K1 Reviewer launch:** any in-build reviewer is launched as the shared recipe describes, citing it, and its probe has passed for the Claude Code version installed now.
+- **K2 Parks:** parks are described as bmad-loop commits them: the plan's `status: blocked` and `operator_actions:`, plus `.bmad-loop/operator/<id>.json`, in the story's own commit.
+- **K3 Exact claims:** every exact-set or exact-count claim about an existing output matches the producing code or a committed report.
+- **K4 Input size:** the story states a byte budget for each reviewer's or agent's input, and the reviewer's time limit, set for reading that budget, fits inside R11's session timeout.
+- **K5 bmad-loop version:** every bmad-loop behavior the story relies on cites the version it was checked on, and that version is the installed one.
+- **K6 Current ADRs:** no ADR or passage the story relies on is superseded or contradicted by a later amendment or dated user decision.
+
+The entry is their one home. Check 2's brief copies K1–K6 after R12, so a K FAIL there gives NO-GO. The post-approval Ticket check runs them again, in the same scope as R1–R12, and `workflow.validate_after` makes a K FAIL block the build like an R-item FAIL. A story that does not touch an item's class passes it as not applicable, with the reason.
+
+**3. Shared recipes.** A drafting rule beside "Wording": Sofia cites a shared recipe by its `path#section` and lists the path in References. She does not restate its commands or flags; the story gives only its own values.
+
+**4. Follow-up.** A preflight script that runs the probe, judges it from the stream-json log and records the row with the Claude Code version. It is code, so it lands through a story, not through this section. Until then the coordinator runs the probe by hand.
+
+**Scope.** Every Check 2 run after this section takes effect, and every approval committed after the entry, delegated or the user's. Approvals committed before the entry keep their standing; a later re-approval is covered. It passes no gate.
+
+*Alternatives.* Judging every unrefined story against K1–K6 at once was rejected: refinement is just-in-time, and a full pass would judge text that refinement will rewrite. A longer deny list was rejected: it is a blocklist.
+
+*Consequences.* A build that launches a reviewer uses one launcher, tested against the installed Claude Code. The reviewer's file tools reach only its packaged inputs and write only its output, and the log, not the reviewer, shows what it did. Check 2 and the second pass judge six more items; a story that launches no reviewer, describes no park and starts no agent passes K1, K2 and K4 as not applicable. K1 ties readiness to the machine: after a Claude Code update, it fails for any story that launches a reviewer until the probe is run again. The probe proves only the behaviors it tests, and managed settings still apply under `--restricted`; the session's hashes, the compliance check and bmad-loop's review session remain the backstop.
 
 ## Alternatives considered
 
