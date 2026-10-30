@@ -2,9 +2,29 @@
 
 A portable delivery process for [BMad Method](https://github.com/bmad-code-org/BMAD-METHOD) v7 projects that build with bmad-loop. It is packaged as one agent skill, `bmad-delivery-kit`. A coding agent runs the skill inside your BMad project, and the skill installs the process there: it infers your project's details, renders the templates, and merges them in, showing a diff before each write.
 
+## In plain English
+
+When you build software with AI coding agents, the slow part is usually not the coding. It is the hand-offs: someone writes down what a piece of work should do (BMad calls each piece a *story*), an agent builds it, and someone checks the result. Two things go wrong.
+
+- **The agent misunderstands the story.** Text that seems clear to the person who wrote it often isn't. The agent fills the gaps with guesses, and you find out after it has built the wrong thing.
+- **You become the bottleneck.** If a person has to approve every story before it is built, a project with hundreds of stories spends most of its time waiting for that person.
+
+This kit tackles both.
+
+- **It tests each story on fresh readers before anything is built.** Two new AI agents, which have seen none of the planning conversation, read the story cold. One explains back, point by point, what it would build. The other works through a twelve-point readiness checklist. Wherever the explanation differs from what was meant, or the checklist fails, the story is fixed and checked again. Misunderstandings are caught on paper, where they are cheap, rather than in code.
+- **It lets routine work go ahead without waiting for you.** You set the rules once, in a decision record that you read and accept. After that, a coordinating agent may approve a story itself, but only when its checks came back clean and the work is local and low-stakes: nothing deployed, no money spent, no legal question, no real passwords or keys. Everything else still comes to you, gathered into one checklist, with a recommended answer for every question.
+- **Anything that ships to real users always gets your eyes.** You approve the story, read the builder's plan before it starts, and walk through the result before it counts as done.
+- **It keeps a paper trail.** Every check, fix and approval is logged against a fingerprint of the exact text that was approved. If the text changes afterwards, the approval no longer counts.
+- **It knows when to stop.** If a story keeps failing its checks, the kit stops patching it after three rounds and has it rewritten or split into smaller stories.
+- **Its rules come from real failures.** Each rule traces back to something that went wrong while running this process on a production project; `references/lessons.md` lists them.
+
+To use it, you copy the skill into your project and ask your coding agent to "install the delivery kit". It writes the rules into your project's BMad settings, plus two decision records for you to read. Nothing about how your project runs changes until you accept those records.
+
+It is for teams and solo developers who already use the BMad Method (v7) with its bmad-loop runner, and who want AI agents to deliver many stories with less waiting and fewer misread stories.
+
 **Status:** v1.0.0. Extracted from one production BMad project and tested there on bmad-loop 0.13.2. Everything specific to that project is an install-time parameter or was removed.
 
-## What the process does
+## What the process does, in detail
 
 - **Fresh-context checks before approval.** Two brand-new subagents read a refined story with no chat context. One explains each criterion back, and Sofia (BMad's product owner agent) marks it MATCH, GAP or DIVERGE. The other gives a GO or NO-GO verdict on twelve readiness items, R1–R12. Results go to the epic's memlog, pinned to SHA-256 hashes of the story and its entry, never into the story itself.
 - **Risk-scaled depth.** High-risk stories leave the builder zero decisions and get up to two runs of each check, plus one narrow delegated third run. Medium- and low-risk stories may leave internal-structure choices open and get one run of each check, plus one readiness-only confirmation run.
